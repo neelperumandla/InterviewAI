@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #0f1117;
+  color: #e2e8f0;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #1e2130; }
+::-webkit-scrollbar-thumb { background: #3d4464; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #5a6490; }
+
+/* Smooth transitions */
+* { transition-property: background-color, border-color, color, opacity;
+    transition-duration: 150ms; transition-timing-function: ease; }

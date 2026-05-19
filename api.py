@@ -330,9 +330,47 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                     "message": "Evaluating your answer...",
                 })
 
-                new_state, interrupt_val, error_message = await _run_graph(
-                    Command(resume=answer), thread_config
-                )
+                # Heartbeat the client every 15s so it knows we're still working
+                # (LLM retries or backoff can easily exceed the browser's idea of
+                # "responsive"). Without this, a long evaluation looks like a
+                # dead connection.
+                eval_cancel = asyncio.Event()
+
+                async def periodic_eval_status() -> None:
+                    elapsed = 0
+                    try:
+                        while not eval_cancel.is_set():
+                            await asyncio.sleep(15)
+                            if eval_cancel.is_set():
+                                return
+                            elapsed += 15
+                            try:
+                                await _send(websocket, {
+                                    "type": "status",
+                                    "message": (
+                                        f"Still evaluating ({elapsed}s)… the "
+                                        "Critic Agent may be waiting on rate "
+                                        "limits."
+                                    ),
+                                })
+                            except Exception:
+                                return
+                    except asyncio.CancelledError:
+                        return
+
+                eval_status_task = asyncio.create_task(periodic_eval_status())
+                try:
+                    new_state, interrupt_val, error_message = await _run_graph(
+                        Command(resume=answer), thread_config
+                    )
+                finally:
+                    eval_cancel.set()
+                    eval_status_task.cancel()
+                    try:
+                        await eval_status_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
                 if error_message:
                     await _send(websocket, {
                         "type": "error",

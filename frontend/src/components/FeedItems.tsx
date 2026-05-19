@@ -1,5 +1,6 @@
 import type { FeedItem, QuestionData, EvaluationData, ResearchData } from '../types/interview'
 import { PASS_THRESHOLD } from '../constants'
+import { stripQuestionMarkers } from './CodeSandbox'
 
 export function FeedItemView({ item }: { item: FeedItem }) {
   switch (item.kind) {
@@ -40,15 +41,7 @@ function ResearchCard({ data }: { data: ResearchData }) {
 }
 
 function QuestionCard({ data }: { data: QuestionData }) {
-  const stripped = data.question
-    .replace(/SAMPLE_INPUT_BEGIN[\s\S]*?SAMPLE_INPUT_END/mi, '')
-    .replace(/EXPECTED_OUTPUT_BEGIN[\s\S]*?EXPECTED_OUTPUT_END/mi, '')
-    .replace(/STARTER_CODE_BEGIN[\s\S]*?STARTER_CODE_END/mi, '')
-    .replace(
-      /SAMPLE_INPUT_BEGIN|SAMPLE_INPUT_END|EXPECTED_OUTPUT_BEGIN|EXPECTED_OUTPUT_END|STARTER_CODE_BEGIN|STARTER_CODE_END/gi,
-      ''
-    )
-    .trim()
+  const stripped = stripQuestionMarkers(data.question)
 
   const diffColor = data.difficulty === 'hard' ? 'text-red-400 bg-red-500/10 border-red-500/20'
     : data.difficulty === 'easy' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'

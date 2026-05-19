@@ -125,6 +125,18 @@ export function useInterview() {
       setStatusMsg('Connection error. Is the API server running?')
       setIsProcessing(false)
     }
+
+    ws.onclose = (event) => {
+      // Don't override a more specific error message we may already have set.
+      setIsProcessing(false)
+      if (event.wasClean) {
+        // Either the server cleanly ended the session or this hook was unmounting.
+        return
+      }
+      setStatusMsg(
+        `Connection lost (code ${event.code}). The server may be busy with rate-limited LLM calls — refresh to start a new session.`
+      )
+    }
   }, [sessionId, handleMessage])
 
   const submitAnswer = useCallback((answer: string) => {

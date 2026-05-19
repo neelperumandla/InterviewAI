@@ -82,10 +82,43 @@ python main.py
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENAI_MODEL` | `gpt-4o` | OpenAI model to use |
-| `PASS_SCORE_THRESHOLD` | `6.0` | Minimum score to pass a topic |
+| `PASS_SCORE_THRESHOLD` | `60.0` | Minimum score (0–100) to pass a topic |
 | `MAX_TOPIC_ATTEMPTS` | `3` | Max retries before skipping a topic |
 | `RESEARCH_MAX_RETRIES` | `2` | Max research attempts before fallback |
+| `API_HOST` / `API_PORT` | `0.0.0.0` / `8001` | FastAPI bind address |
+
+### Model & rate-limit overrides (all optional)
+
+Each agent has its own Gemini client with a per-agent **token-bucket rate
+limiter** so we stay inside Gemini free-tier RPM caps. Defaults are
+conservative; override any of them in `.env` if you have paid quota or need
+to downgrade `gemini-2.5-pro` (which has the strictest free quota).
+
+| Variable | Default | Notes |
+|---|---|---|
+| `MODEL_ORCHESTRATOR` | `gemini-2.5-flash` | Routing decisions |
+| `MODEL_RESEARCH` | `gemini-2.5-flash` | Web-search synthesis |
+| `MODEL_INTERVIEW` | `gemini-2.5-flash` | Question generation |
+| `MODEL_EVALUATION` | `gemini-2.5-flash` | Answer scoring (was Pro; downgraded to fit free tier) |
+| `MODEL_CRITIC` | `gemini-2.5-flash` | Reviews the evaluator (was Pro; downgraded to fit free tier) |
+| `MODEL_MEMORY` | `gemini-2.5-flash-lite` | History summarisation |
+| `RPM_ORCHESTRATOR` | `6.0` | Per-agent requests-per-minute cap |
+| `RPM_RESEARCH` | `5.0` | |
+| `RPM_INTERVIEW` | `6.0` | |
+| `RPM_EVALUATION` | `6.0` | On Flash; lower this if you switch back to Pro |
+| `RPM_CRITIC` | `6.0` | On Flash; lower this if you switch back to Pro |
+| `RPM_MEMORY` | `8.0` | |
+| `TEMP_<AGENT>` | per agent | Float, overrides default temperature |
+
+**Want Pro back on Evaluation / Critic?** If you have paid quota and want
+top-quality scoring, override in `.env`:
+
+```
+MODEL_EVALUATION=gemini-2.5-pro
+MODEL_CRITIC=gemini-2.5-pro
+RPM_EVALUATION=2
+RPM_CRITIC=2
+```
 
 ## Project Structure
 

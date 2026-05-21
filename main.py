@@ -22,6 +22,9 @@ def main() -> None:
         port=config.API_PORT,
         reload=reload,
         log_level="info",
+        # Keep WebSockets alive through long LLM chains (evaluation → critique → orchestrator).
+        ws_ping_interval=20.0,
+        ws_ping_timeout=120.0,
     )
 
 

@@ -19,10 +19,14 @@ class Config:
 
     # Research thresholds
     RESEARCH_MAX_RETRIES: int = int(os.getenv("RESEARCH_MAX_RETRIES", "2"))
+    RESEARCH_CACHE_DAYS: int = int(os.getenv("RESEARCH_CACHE_DAYS", "30"))
+
+    # Calibration: fixed number of skill-gauging questions per session
+    CALIBRATION_QUESTION_COUNT: int = int(os.getenv("CALIBRATION_QUESTION_COUNT", "3"))
 
     # Scoring thresholds (0-100 scale)
     PASS_SCORE_THRESHOLD: float = float(os.getenv("PASS_SCORE_THRESHOLD", "60.0"))
-    MAX_TOPIC_ATTEMPTS: int = int(os.getenv("MAX_TOPIC_ATTEMPTS", "3"))
+    MAX_TOPIC_ATTEMPTS: int = int(os.getenv("MAX_TOPIC_ATTEMPTS", "1"))
 
     # SQLite DB for LangGraph checkpointing
     DB_PATH: str = os.getenv("DB_PATH", "interview_memory.db")

@@ -85,6 +85,8 @@ python main.py
 | `PASS_SCORE_THRESHOLD` | `60.0` | Minimum score (0–100) to pass a topic |
 | `MAX_TOPIC_ATTEMPTS` | `3` | Max retries before skipping a topic |
 | `RESEARCH_MAX_RETRIES` | `2` | Max research attempts before fallback |
+| `RESEARCH_CACHE_DAYS` | `30` | Reuse cached company research younger than this |
+| `CALIBRATION_QUESTION_COUNT` | `3` | Skill-check coding questions per session |
 | `API_HOST` / `API_PORT` | `0.0.0.0` / `8001` | FastAPI bind address |
 
 ### Model & rate-limit overrides (all optional)

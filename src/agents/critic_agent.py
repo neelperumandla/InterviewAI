@@ -44,6 +44,8 @@ Important:
 - If the evaluation was accurate and complete, return it unchanged (score_changed: false)
 - Consider the candidate's historical performance context if provided
 - Pass threshold is {threshold}/100
+- The "Curriculum category" line is NOT the problem statement — grade only against
+  the text under "Question asked".
 """
 
 
@@ -69,14 +71,18 @@ def critique_node(state: InterviewState) -> dict:
 
     system_prompt = _SYSTEM_PROMPT.format(threshold=config.PASS_SCORE_THRESHOLD)
 
+    topic_attempts = state.get("topic_attempts", {})
+    attempt_num = topic_attempts.get(current_topic, 1)
+
     user_prompt = f"""\
 Company: {state.get('company')}
 Role: {state.get('role')}
-Topic: {current_topic}
+Curriculum category (do NOT use this alone to identify the problem): {current_topic}
 Question difficulty: {state.get('question_difficulty', 'medium')}
+Attempt: {attempt_num}
 {history_context}
 
-Question asked:
+Question asked (this is the ONLY problem definition to grade against):
 {state.get('current_question', '')}
 
 Candidate's answer:
@@ -113,6 +119,7 @@ Review this evaluation. Adjust if warranted.
     history = list(state.get("topic_history", []))
     record: TopicRecord = {
         "topic": current_topic,
+        "attempt": attempt_num,
         "question": state.get("current_question", ""),
         "answer": state.get("user_answer", ""),
         "raw_score": raw_score,
@@ -128,4 +135,5 @@ Review this evaluation. Adjust if warranted.
         "critique_feedback": final_feedback,
         "critique_notes": critique_notes,
         "topic_history": history,
+        "questions_answered": state.get("questions_answered", 0) + 1,
     }

@@ -4,6 +4,7 @@ from langgraph.graph.message import add_messages
 
 class TopicRecord(TypedDict):
     topic: str
+    attempt: int
     question: str
     answer: str
     raw_score: float          # 0-100, from Evaluation Agent
@@ -31,9 +32,11 @@ class InterviewState(TypedDict):
     research_quality: str     # "thin" | "good" | "excellent"
     interview_type: str       # "ml_focused" | "behavioral" | "technical" | "general"
 
-    # ── Interview topics (set by Research Agent, ordered/filtered by Orchestrator) ──
+    # ── Interview topics (set by Research Agent; calibration uses first N) ──
     interview_topics: list[str]
     current_topic_index: int
+    questions_answered: int       # calibration progress (0..CALIBRATION_QUESTION_COUNT)
+    research_from_cache: bool
 
     # ── Current Q&A turn ─────────────────────────────────────────────────────
     current_question: str

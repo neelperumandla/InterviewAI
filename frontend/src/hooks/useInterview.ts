@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type {
-  Screen, TopicState, FeedItem, WsMessage,
+  Screen, FeedItem, WsMessage,
   QuestionData, EvaluationData, ResearchData, SessionReviewData,
 } from '../types/interview'
 import { randomId } from '../randomId'
@@ -10,7 +10,8 @@ const WS_URL = import.meta.env.VITE_WS_URL ?? `ws://${window.location.host}/ws`
 export function useInterview() {
   const [screen, setScreen] = useState<Screen>('setup')
   const [statusMsg, setStatusMsg] = useState('')
-  const [topics, setTopics] = useState<TopicState[]>([])
+  const [calibrationTopics, setCalibrationTopics] = useState<string[]>([])
+  const [researchReady, setResearchReady] = useState(false)
   const [feedItems, setFeedItems] = useState<FeedItem[]>([])
   const [currentQuestion, setCurrentQuestion] = useState<QuestionData | null>(null)
   const [sessionReview, setSessionReview] = useState<SessionReviewData | null>(null)
@@ -36,9 +37,14 @@ export function useInterview() {
 
       case 'research_done': {
         const rd = msg.data as ResearchData
-        setTopics(rd.topics.map(t => ({ name: t, status: 'pending' as const })))
+        setCalibrationTopics(rd.topics)
+        setResearchReady(true)
         addFeed('research', rd)
-        setStatusMsg('')
+        setStatusMsg(
+          rd.from_cache
+            ? 'Loaded cached company research.'
+            : 'Research complete — answer 3 calibration questions.',
+        )
         break
       }
 
@@ -46,9 +52,7 @@ export function useInterview() {
         const qd = msg.data as QuestionData
         setCurrentQuestion(qd)
         setIsProcessing(false)
-        setTopics(prev => prev.map(t =>
-          t.name === qd.topic ? { ...t, status: 'active' } : t
-        ))
+        setStatusMsg('')
         addFeed('question', qd)
         break
       }
@@ -56,21 +60,13 @@ export function useInterview() {
       case 'evaluation': {
         const ed = msg.data as EvaluationData
         setCurrentQuestion(null)
-        setIsProcessing(true)
-        setTopics(prev => prev.map(t => {
-          // find the active topic and update its status
-          if (t.status === 'active') {
-            return { ...t, score: ed.score, status: ed.passed ? 'passed' : 'failed' }
-          }
-          return t
-        }))
+        setIsProcessing(false)
+        setStatusMsg(
+          ed.passed ? 'Nice work — loading next question…' : 'Review feedback — next question soon…',
+        )
         addFeed('evaluation', ed)
         break
       }
-
-      case 'orchestrator':
-        // orchestrator thinking — keep processing spinner on
-        break
 
       case 'session_review':
         setSessionReview(msg.data as SessionReviewData)
@@ -103,19 +99,20 @@ export function useInterview() {
     const ws = new WebSocket(`${WS_URL}/${sessionId}`)
     wsRef.current = ws
 
+    setFeedItems([])
+    setCalibrationTopics([])
+    setResearchReady(false)
     setStatusMsg('Connecting to interview backend...')
     setIsProcessing(true)
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: 'start', name, company, role, codingLanguage }))
-      setIsProcessing(true)
       setScreen('interview')
     }
 
     ws.onmessage = (event) => {
       try {
-        const msg: WsMessage = JSON.parse(event.data)
-        handleMessage(msg)
+        handleMessage(JSON.parse(event.data) as WsMessage)
       } catch (e) {
         console.error('WS parse error', e)
       }
@@ -127,30 +124,32 @@ export function useInterview() {
     }
 
     ws.onclose = (event) => {
-      // Don't override a more specific error message we may already have set.
       setIsProcessing(false)
-      if (event.wasClean) {
-        // Either the server cleanly ended the session or this hook was unmounting.
-        return
-      }
+      if (event.wasClean) return
       setStatusMsg(
-        `Connection lost (code ${event.code}). The server may be busy with rate-limited LLM calls — refresh to start a new session.`
+        `Connection lost (code ${event.code}). Refresh to start a new session.`,
       )
     }
   }, [sessionId, handleMessage])
 
   const submitAnswer = useCallback((answer: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    if (!currentQuestion) return
     addFeed('answer', { text: answer })
     setCurrentQuestion(null)
     setIsProcessing(true)
     setStatusMsg('Evaluating your answer...')
-    wsRef.current.send(JSON.stringify({ type: 'answer', content: answer }))
-  }, [addFeed])
+    wsRef.current.send(JSON.stringify({
+      type: 'answer',
+      content: answer,
+      topic: currentQuestion.topic,
+      attempt: currentQuestion.attempt,
+    }))
+  }, [addFeed, currentQuestion])
 
   return {
-    screen, statusMsg, topics, feedItems,
-    currentQuestion, sessionReview, isProcessing,
+    screen, statusMsg, calibrationTopics, researchReady,
+    feedItems, currentQuestion, sessionReview, isProcessing,
     startSession, submitAnswer,
   }
 }

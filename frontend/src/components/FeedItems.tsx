@@ -20,7 +20,7 @@ function ResearchCard({ data }: { data: ResearchData }) {
     <div className="bg-[#1a1f2e] border border-slate-700/50 rounded-xl p-5">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-          Research Complete
+          {data.from_cache ? 'Research Loaded (cached)' : 'Research Complete'}
         </span>
         <span className={`text-xs font-semibold ${qualityColor}`}>
           {data.quality}

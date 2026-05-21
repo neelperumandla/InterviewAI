@@ -127,7 +127,16 @@ export function ProblemPanel({
           </p>
         )}
 
-        {selected.evaluation && <PastEvaluation data={selected.evaluation} />}
+        {selected.evaluation && (
+          <PastEvaluation
+            data={selected.evaluation}
+            questionMismatch={
+              !!selected.evaluation.question
+              && stripQuestionMarkers(selected.evaluation.question).slice(0, 120)
+              !== stripQuestionMarkers(selected.data.question).slice(0, 120)
+            }
+          />
+        )}
 
         {!isLatest && (
           <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 p-3 text-xs text-slate-400">
@@ -175,7 +184,13 @@ function QuestionHeader({ data }: { data: QuestionData }) {
   )
 }
 
-function PastEvaluation({ data }: { data: EvaluationData }) {
+function PastEvaluation({
+  data,
+  questionMismatch = false,
+}: {
+  data: EvaluationData
+  questionMismatch?: boolean
+}) {
   const pct = Math.min(100, Math.max(0, data.score))
   const color = pct >= PASS_THRESHOLD ? 'bg-emerald-500' : pct >= 40 ? 'bg-yellow-500' : 'bg-red-500'
   const badgeStyle = data.passed
@@ -184,6 +199,11 @@ function PastEvaluation({ data }: { data: EvaluationData }) {
 
   return (
     <div className="rounded-xl border border-slate-700/40 bg-[#0f1117] p-4">
+      {questionMismatch && (
+        <p className="mb-3 text-xs text-amber-400/90">
+          This feedback belongs to a different attempt — check the Chat tab for the matching card.
+        </p>
+      )}
       <div className="mb-3 flex items-center gap-3">
         <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${badgeStyle}`}>
           {data.passed ? '✓ PASSED' : '✗ NEEDS WORK'}

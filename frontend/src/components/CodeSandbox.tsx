@@ -76,6 +76,8 @@ interface CodeEditorProps {
   questionText: string
   disabled: boolean
   onSubmit: (code: string) => void
+  /** Fill the parent column (Questions workspace split layout). */
+  fillHeight?: boolean
 }
 
 const INDENT = '    '
@@ -89,7 +91,7 @@ const BRACKET_PAIRS: Record<string, string> = {
 }
 const CLOSING_CHARS = new Set([')', ']', '}', '"', "'", '`'])
 
-export function CodeEditor({ questionText, disabled, onSubmit }: CodeEditorProps) {
+export function CodeEditor({ questionText, disabled, onSubmit, fillHeight = false }: CodeEditorProps) {
   const { starterCode } = useCodingProblem(questionText)
   const [code, setCode] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -253,39 +255,53 @@ export function CodeEditor({ questionText, disabled, onSubmit }: CodeEditorProps
     }
   }
 
-  return (
-    <div className="border-t border-slate-700/50 bg-[#1a1f2e] p-4">
-      <div className="bg-[#0f1117] border border-slate-700/60 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-700/50">
-          <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
-            Code Editor
-          </p>
-          <span className="text-xs text-slate-500">Tab indents · Ctrl+Enter submits</span>
-        </div>
-        <textarea
-          ref={textareaRef}
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={disabled}
-          spellCheck={false}
-          autoCorrect="off"
-          autoCapitalize="off"
-          placeholder={disabled ? 'Waiting for next question...' : 'Write your solution code here...'}
-          className="block w-full h-64 bg-transparent px-4 py-3 text-sm text-slate-100 placeholder-slate-600 outline-none resize-y font-mono leading-relaxed"
-          style={{ tabSize: 4 }}
-        />
+  const shell = (
+    <div
+      className={`flex min-h-0 flex-col overflow-hidden bg-[#0f1117] ${
+        fillHeight ? 'h-full rounded-none border-0' : 'rounded-xl border border-slate-700/60'
+      }`}
+    >
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-700/50 px-4 py-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          Code Editor
+        </p>
+        <span className="text-xs text-slate-500">Tab indents · Ctrl+Enter submits</span>
       </div>
-
-      <div className="flex justify-end mt-3">
+      <textarea
+        ref={textareaRef}
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        onKeyDown={handleKeyDown}
+        disabled={disabled}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
+        placeholder={disabled ? 'Waiting for next question...' : 'Write your solution code here...'}
+        className={`block w-full min-h-0 flex-1 resize-none bg-transparent px-4 py-3 font-mono text-sm leading-relaxed text-slate-100 placeholder-slate-600 outline-none ${
+          fillHeight ? '' : 'h-64 resize-y'
+        }`}
+        style={{ tabSize: 4 }}
+      />
+      <div className="flex shrink-0 justify-end border-t border-slate-700/50 px-4 py-2.5">
         <button
+          type="button"
           onClick={() => onSubmit(code)}
           disabled={disabled || code.trim().length === 0}
-          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-white font-semibold text-sm"
+          className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Submit Code
         </button>
       </div>
+    </div>
+  )
+
+  if (fillHeight) {
+    return <div className="flex min-h-0 flex-1 flex-col p-3">{shell}</div>
+  }
+
+  return (
+    <div className="border-t border-slate-700/50 bg-[#1a1f2e] p-4">
+      {shell}
     </div>
   )
 }

@@ -35,6 +35,11 @@ Scoring rubric (0–100):
 Pass threshold: {threshold}
 Difficulty level of this question: {difficulty}
 Be objective. Do not inflate scores.
+
+CRITICAL: The "Topic" line is only a broad curriculum category. The actual problem
+to grade is EXACTLY the text under "Question asked". Never infer the problem from
+the topic name alone — they can differ (e.g. topic says "Anagrams" but the question
+text is a different LeetCode problem).
 """
 
 
@@ -46,6 +51,9 @@ def evaluation_node(state: InterviewState) -> dict:
     idx = state.get("current_topic_index", 0)
     current_topic = topics[idx] if idx < len(topics) else "unknown"
     difficulty = state.get("question_difficulty", "medium")
+    topic_attempts = state.get("topic_attempts", {})
+    attempt_num = topic_attempts.get(current_topic, 1)
+    question_text = state.get("current_question", "")
 
     system_prompt = _SYSTEM_PROMPT.format(
         threshold=config.PASS_SCORE_THRESHOLD,
@@ -55,17 +63,18 @@ def evaluation_node(state: InterviewState) -> dict:
     user_prompt = f"""\
 Company: {state.get('company')}
 Role: {state.get('role')}
-Topic: {current_topic}
+Curriculum category (do NOT use this alone to identify the problem): {current_topic}
 Interview Type: {state.get('interview_type', 'general')}
 Question difficulty: {difficulty}
+Attempt: {attempt_num}
 
-Question asked:
-{state.get('current_question', '')}
+Question asked (this is the ONLY problem definition to grade against):
+{question_text}
 
 Candidate's answer:
 {state.get('user_answer', '')}
 
-Evaluate this answer.
+Evaluate whether the answer solves the problem described under "Question asked".
 """
 
     response = llm.invoke([

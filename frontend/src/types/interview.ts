@@ -17,6 +17,9 @@ export interface QuestionData {
 }
 
 export interface EvaluationData {
+  topic?: string
+  attempt?: number
+  question?: string
   score: number
   raw_score: number
   feedback: string
@@ -29,6 +32,7 @@ export interface ResearchData {
   topics: string[]
   interview_type: string
   summary: string
+  from_cache?: boolean
 }
 
 export interface SessionReviewData {
@@ -46,6 +50,7 @@ export interface SessionReviewData {
 
 export interface TopicRecord {
   topic: string
+  attempt?: number
   question: string
   answer: string
   score: number

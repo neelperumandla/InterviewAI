@@ -1,109 +1,99 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type {
-  TopicState, FeedItem, QuestionData, EvaluationData,
-} from '../types/interview'
-import { TopicSidebar } from './TopicSidebar'
+import type { FeedItem, QuestionData, EvaluationData } from '../types/interview'
 import { ChatPanel } from './ChatPanel'
-import { ProblemPanel, type QuestionRecord } from './ProblemPanel'
+import { QuestionsWorkspace } from './QuestionsWorkspace'
+import type { QuestionRecord } from './ProblemPanel'
 
 interface Props {
-  topics: TopicState[]
   feedItems: FeedItem[]
+  calibrationTopics: string[]
   currentQuestion: QuestionData | null
   statusMsg: string
   isProcessing: boolean
+  researchReady: boolean
   onSubmit: (answer: string) => void
 }
 
-type Tab = 'chat' | 'problem'
+type Tab = 'chat' | 'questions'
 
 export function InterviewScreen({
-  topics, feedItems, currentQuestion, statusMsg, isProcessing, onSubmit,
+  feedItems,
+  calibrationTopics,
+  currentQuestion,
+  statusMsg,
+  isProcessing,
+  researchReady,
+  onSubmit,
 }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('chat')
-  const [selectedIdx, setSelectedIdx] = useState<number>(0)
-  const [problemUnread, setProblemUnread] = useState<number>(0)
 
-  // Pair each question with its evaluation (if it has one yet).
   const questions = useMemo<QuestionRecord[]>(() => {
     const result: QuestionRecord[] = []
-    let pending: QuestionData | null = null
+    const byKey = new Map<string, QuestionRecord>()
+    const keyOf = (topic: string, attempt: number) => `${topic}::${attempt}`
+
     for (const item of feedItems) {
       if (item.kind === 'question') {
-        if (pending) result.push({ data: pending })
-        pending = item.data as QuestionData
-      } else if (item.kind === 'evaluation' && pending) {
-        result.push({ data: pending, evaluation: item.data as EvaluationData })
-        pending = null
+        const q = item.data as QuestionData
+        const rec: QuestionRecord = { data: q }
+        result.push(rec)
+        byKey.set(keyOf(q.topic, q.attempt), rec)
+      } else if (item.kind === 'evaluation') {
+        const ev = item.data as EvaluationData
+        const rec = byKey.get(keyOf(ev.topic ?? '', ev.attempt ?? 0))
+        if (rec) rec.evaluation = ev
       }
     }
-    if (pending) result.push({ data: pending })
     return result
   }, [feedItems])
 
-  // Auto-follow newest question when the user was already on the previous latest.
+  const [selectedIdx, setSelectedIdx] = useState(0)
   const prevLenRef = useRef(0)
+
+  useEffect(() => {
+    if (researchReady) setActiveTab('questions')
+  }, [researchReady])
+
   useEffect(() => {
     const prevLen = prevLenRef.current
     if (questions.length > prevLen) {
       if (prevLen === 0 || selectedIdx === prevLen - 1) {
         setSelectedIdx(questions.length - 1)
       }
-      if (activeTab !== 'problem') {
-        setProblemUnread(n => n + (questions.length - prevLen))
-      }
+      setActiveTab('questions')
     }
     prevLenRef.current = questions.length
-  }, [questions.length, selectedIdx, activeTab])
-
-  useEffect(() => {
-    if (activeTab === 'problem') setProblemUnread(0)
-  }, [activeTab])
+  }, [questions.length, selectedIdx])
 
   const hasLiveQuestion = !!currentQuestion && !isProcessing
 
   return (
-    <div className="flex h-screen min-h-0 bg-[#0f1117]">
-      {activeTab === 'problem' && (
-        <TopicSidebar
-          topics={topics}
-          statusMsg={isProcessing && !currentQuestion ? statusMsg : ''}
-        />
-      )}
+    <div className="flex h-screen min-h-0 flex-col bg-[#0f1117]">
+      <header className="flex shrink-0 items-center justify-between border-b border-slate-700/50 bg-[#1a1f2e] px-6 py-3">
+        <div className="flex items-center gap-1">
+          <TabButton active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} label="Chat" />
+          <TabButton
+            active={activeTab === 'questions'}
+            onClick={() => setActiveTab('questions')}
+            label="Questions"
+            disabled={!researchReady}
+          />
+        </div>
+        {isProcessing && (
+          <span className="flex items-center gap-1.5 text-xs text-slate-400">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400" />
+            {statusMsg || 'Processing...'}
+          </span>
+        )}
+      </header>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Header with tabs */}
-        <header className="flex items-center justify-between border-b border-slate-700/50 bg-[#1a1f2e] px-6 py-3">
-          <div className="flex items-center gap-1">
-            <TabButton
-              active={activeTab === 'chat'}
-              onClick={() => setActiveTab('chat')}
-              label="Chat"
-            />
-            <TabButton
-              active={activeTab === 'problem'}
-              onClick={() => setActiveTab('problem')}
-              label="Problem"
-              badge={problemUnread > 0 ? problemUnread : undefined}
-              disabled={questions.length === 0}
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            {isProcessing && (
-              <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400" />
-                {statusMsg || 'Processing...'}
-              </span>
-            )}
-          </div>
-        </header>
-
+      <div className="flex min-h-0 flex-1 flex-col">
         {activeTab === 'chat' ? (
           <ChatPanel feedItems={feedItems} />
         ) : (
-          <ProblemPanel
+          <QuestionsWorkspace
             questions={questions}
+            calibrationTopics={calibrationTopics}
             selectedIdx={selectedIdx}
             onSelectIdx={setSelectedIdx}
             hasLiveQuestion={hasLiveQuestion}
@@ -116,32 +106,29 @@ export function InterviewScreen({
   )
 }
 
-interface TabButtonProps {
+function TabButton({
+  active,
+  onClick,
+  label,
+  disabled,
+}: {
   active: boolean
   onClick: () => void
   label: string
-  badge?: number
   disabled?: boolean
-}
-
-function TabButton({ active, onClick, label, badge, disabled }: TabButtonProps) {
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`relative rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
+      className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
         active
           ? 'bg-indigo-600/15 text-indigo-200'
           : 'text-slate-400 hover:bg-slate-700/40 hover:text-slate-200'
-      } disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent`}
+      } disabled:cursor-not-allowed disabled:opacity-40`}
     >
       {label}
-      {badge !== undefined && badge > 0 && (
-        <span className="ml-2 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-500 px-1 text-[10px] font-bold text-white">
-          {badge}
-        </span>
-      )}
     </button>
   )
 }

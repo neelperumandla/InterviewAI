@@ -9,7 +9,7 @@ Graph shape:
   START → orchestrator
   orchestrator →(conditional)→ research | interview | session_review | END
   research → orchestrator
-  interview → evaluation → critique → orchestrator
+  interview_generate → interview_collect (interrupt) → evaluation → critique → orchestrator
   session_review → save_history → END
 """
 import sqlite3
@@ -20,7 +20,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from src.state import InterviewState
 from src.agents.research_agent import research_node
 from src.agents.orchestrator import orchestrator_node, route_after_orchestrator
-from src.agents.interview_agent import interview_node
+from src.agents.interview_agent import generate_question_node, collect_answer_node
 from src.agents.evaluation_agent import evaluation_node
 from src.agents.critic_agent import critique_node
 from src.agents.session_review_agent import session_review_node
@@ -52,7 +52,8 @@ def build_graph():
     # ── Register nodes ────────────────────────────────────────────────────────
     builder.add_node("orchestrator",    orchestrator_node)
     builder.add_node("research",        research_node)
-    builder.add_node("interview",       interview_node)   # contains interrupt()
+    builder.add_node("interview_generate", generate_question_node)
+    builder.add_node("interview_collect",  collect_answer_node)  # interrupt()
     builder.add_node("evaluation",      evaluation_node)
     builder.add_node("critique",        critique_node)
     builder.add_node("session_review",  session_review_node)
@@ -69,7 +70,7 @@ def build_graph():
         route_after_orchestrator,
         {
             "research":       "research",
-            "interview":      "interview",
+            "interview":      "interview_generate",
             "session_review": "session_review",
             "__end__":        END,
         },
@@ -79,7 +80,8 @@ def build_graph():
     builder.add_edge("research",  "orchestrator")
 
     # Interview → fixed evaluation pipeline → back to orchestrator
-    builder.add_edge("interview",  "evaluation")
+    builder.add_edge("interview_generate", "interview_collect")
+    builder.add_edge("interview_collect",  "evaluation")
     builder.add_edge("evaluation", "critique")
     builder.add_edge("critique",   "orchestrator")
 

@@ -21,6 +21,9 @@ export default defineConfig(({ mode }) => {
           target: wsTarget,
           ws: true,
           changeOrigin: true,
+          // Default proxy timeouts can drop the socket during long graph runs.
+          timeout: 0,
+          proxyTimeout: 0,
         },
         '/api': {
           target: apiTarget,

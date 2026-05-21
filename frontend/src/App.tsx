@@ -5,8 +5,8 @@ import { SessionReview } from './components/SessionReview'
 
 export default function App() {
   const {
-    screen, statusMsg, topics, feedItems,
-    currentQuestion, sessionReview, isProcessing,
+    screen, statusMsg, calibrationTopics, researchReady,
+    feedItems, currentQuestion, sessionReview, isProcessing,
     startSession, submitAnswer,
   } = useInterview()
 
@@ -20,11 +20,12 @@ export default function App() {
 
   return (
     <InterviewScreen
-      topics={topics}
       feedItems={feedItems}
+      calibrationTopics={calibrationTopics}
       currentQuestion={currentQuestion}
       statusMsg={statusMsg}
       isProcessing={isProcessing}
+      researchReady={researchReady}
       onSubmit={submitAnswer}
     />
   )

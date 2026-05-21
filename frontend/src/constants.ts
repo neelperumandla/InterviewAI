@@ -1,1 +1,2 @@
 export const PASS_THRESHOLD = 60
+export const CALIBRATION_QUESTION_COUNT = 3

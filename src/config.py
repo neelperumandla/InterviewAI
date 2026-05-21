@@ -4,6 +4,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _db_path(filename: str) -> str:
+    """Default SQLite path; use DATA_DIR on Railway volumes."""
+    explicit = os.getenv("DB_PATH" if filename == "interview_memory.db" else "HISTORY_DB_PATH", "")
+    if explicit:
+        return explicit
+    data_dir = os.getenv("DATA_DIR", "").strip()
+    if data_dir:
+        os.makedirs(data_dir, exist_ok=True)
+        return os.path.join(data_dir, filename)
+    return filename
+
+
 class Config:
     # Per-agent Gemini API keys (set in .env.example)
     GEMINI_API_KEY_ORCHESTRATOR: str = os.getenv("GEMINI_API_KEY_ORCHESTRATOR", "")
@@ -32,14 +44,17 @@ class Config:
     MAX_TOPIC_ATTEMPTS: int = int(os.getenv("MAX_TOPIC_ATTEMPTS", "1"))
 
     # SQLite DB for LangGraph checkpointing
-    DB_PATH: str = os.getenv("DB_PATH", "interview_memory.db")
+    DB_PATH: str = _db_path("interview_memory.db")
 
     # SQLite DB for cross-session candidate history
-    HISTORY_DB_PATH: str = os.getenv("HISTORY_DB_PATH", "candidate_history.db")
+    HISTORY_DB_PATH: str = _db_path("candidate_history.db")
 
-    # API server settings
+    # API server settings (Railway injects PORT)
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
-    API_PORT: int = int(os.getenv("API_PORT", "8001"))
+    API_PORT: int = int(os.getenv("PORT", os.getenv("API_PORT", "8001")))
+
+    # Comma-separated list for browser clients (Vercel). Use * only for local dev.
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "*")
 
     @classmethod
     def validate(cls) -> None:
@@ -81,6 +96,13 @@ class Config:
         }
         key = agent_map.get(agent_name, "") or cls.GEMINI_API_KEY_FALLBACK
         return key.strip()
+
+    @classmethod
+    def cors_origin_list(cls) -> list[str]:
+        raw = (cls.CORS_ORIGINS or "*").strip()
+        if raw == "*":
+            return ["*"]
+        return [o.strip() for o in raw.split(",") if o.strip()]
 
 
 config = Config()

@@ -6,8 +6,7 @@ import type {
 } from '../types/interview'
 import { totalTurnsFromTemplate } from '../utils/interviewTurns'
 import { randomId } from '../randomId'
-
-const WS_URL = import.meta.env.VITE_WS_URL ?? `ws://${window.location.host}/ws`
+import { getWebSocketBase } from '../lib/wsUrl'
 
 export function useInterview() {
   const [screen, setScreen] = useState<Screen>('setup')
@@ -166,7 +165,7 @@ export function useInterview() {
     role: string,
     codingLanguage: string,
   ) => {
-    const ws = new WebSocket(`${WS_URL}/${sessionId}`)
+    const ws = new WebSocket(`${getWebSocketBase()}/${sessionId}`)
     wsRef.current = ws
 
     setFeedItems([])

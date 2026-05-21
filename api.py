@@ -81,10 +81,11 @@ async def _lifespan(app: FastAPI):
 
 app = FastAPI(title="Interview Prep AI", lifespan=_lifespan)
 
+_cors_origins = config.cors_origin_list()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials="*" not in _cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

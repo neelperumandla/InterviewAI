@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+PORT="${PORT:-8000}"
+
+python -c "from src.config import config; config.validate()"
+
+exec uvicorn api:app \
+  --host 0.0.0.0 \
+  --port "$PORT" \
+  --ws-ping-interval 20 \
+  --ws-ping-timeout 120

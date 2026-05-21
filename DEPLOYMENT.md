@@ -117,3 +117,4 @@ Use your real Vercel production (and preview) origins. Avoid `*` in production w
 | Sessions reset every deploy | Attach Railway volume + `DATA_DIR=/data` |
 | `invalid_grant` / Gemini errors | Set valid `GEMINI_API_KEY` on Railway (not gcloud ADC) |
 | Build fails on Vercel | Root directory must be `frontend`, Node 18+ |
+| Deploy fails **network health check** | Ensure `GEMINI_API_KEY` + `TAVILY_API_KEY` on Railway; open deploy logs for startup errors; confirm service listens on Railway’s `PORT` (default). `/health` must return 200 — check `https://<railway-domain>/health` after deploy. |

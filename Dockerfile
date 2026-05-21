@@ -18,4 +18,5 @@ RUN chmod +x ./scripts/start-api.sh
 
 EXPOSE 8000
 
-CMD ["sh", "scripts/start-api.sh"]
+# Inline start avoids CRLF issues in start-api.sh on Windows checkouts
+CMD ["sh", "-c", "exec uvicorn api:app --host 0.0.0.0 --port ${PORT:-8000} --ws-ping-interval 20 --ws-ping-timeout 120"]

@@ -36,15 +36,22 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
-from langgraph.types import Command
 from starlette.websockets import WebSocketState
 
 from src.config import config
-from src.graph import get_graph
-from src.interview_template import total_turns
-from src.agents.coach_agent import coach_reply
-from src.agents.interviewer_agent import format_dialogue_transcript, interviewer_probe
 from src.memory.history import get_candidate_profile
+
+
+def _get_graph():
+    from src.graph import get_graph
+
+    return get_graph()
+
+
+def _total_turns(template):
+    from src.interview_template import total_turns
+
+    return total_turns(template)
 
 # Per-session coach log while graph is interrupted (merged into answer resume).
 _coach_logs: dict[str, list[dict]] = {}
@@ -68,6 +75,10 @@ _NOT_BUILT_HTML = """<!DOCTYPE html>
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    try:
+        config.validate()
+    except EnvironmentError as exc:
+        print(f"WARNING: API keys not configured — sessions will fail until fixed: {exc}")
     port = config.API_PORT
     if (_FRONTEND_DIST / "index.html").is_file():
         print(f"Interview Prep AI — UI + API: http://127.0.0.1:{port}/")
@@ -103,7 +114,7 @@ def _graph_worker(
     out_q: queue.Queue,
 ) -> None:
     """Run the graph in a background thread, pushing state snapshots as each node finishes."""
-    graph = get_graph()
+    graph = _get_graph()
     latest_state: dict = {}
     error_message: str | None = None
 
@@ -220,7 +231,7 @@ def _question_payload_from_state(state: dict) -> dict | None:
     topic = topics[idx] if idx < len(topics) else ""
     template = state.get("interview_template") or {}
     slot = state.get("questions_answered", 0) + 1
-    total = total_turns(template)
+    total = _total_turns(template)
     phase = state.get("interview_phase", "primary")
     return {
         "topic": topic,
@@ -279,7 +290,7 @@ async def _broadcast_state_events(
             },
         })
         tmpl = new_state.get("interview_template") or {}
-        n = total_turns(tmpl)
+        n = _total_turns(tmpl)
         label = tmpl.get("format_label", "coding interview")
         await _send(ws, {
             "type": "status",
@@ -336,7 +347,7 @@ async def _broadcast_state_events(
         })
         answered = new_state.get("questions_answered", 0)
         tmpl = new_state.get("interview_template") or {}
-        n = total_turns(tmpl) if tmpl else config.CALIBRATION_QUESTION_COUNT
+        n = _total_turns(tmpl) if tmpl else config.CALIBRATION_QUESTION_COUNT
         if answered < n:
             await _send(ws, {
                 "type": "status",
@@ -526,7 +537,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 if not content:
                     continue
 
-                graph = get_graph()
+                graph = _get_graph()
                 open_q = _open_interrupt_payload(graph, thread_config)
                 if not open_q:
                     await _send(websocket, {
@@ -547,6 +558,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 })
 
                 try:
+                    from src.agents.coach_agent import coach_reply
+
                     reply = await asyncio.to_thread(
                         coach_reply,
                         mode=mode,
@@ -578,7 +591,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 if not content:
                     continue
 
-                graph = get_graph()
+                graph = _get_graph()
                 open_q = _open_interrupt_payload(graph, thread_config)
                 if not open_q:
                     await _send(websocket, {
@@ -607,6 +620,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 await _send(websocket, {"type": "status", "message": "Interviewer is thinking…"})
 
                 try:
+                    from src.agents.interviewer_agent import interviewer_probe
+
                     reply = await asyncio.to_thread(
                         interviewer_probe,
                         company=prev_state.get("company", ""),
@@ -639,7 +654,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
 
                 # Reject answers meant for a different turn (stale UI / wrong tab).
                 rejected = False
-                graph = get_graph()
+                graph = _get_graph()
                 snap = graph.get_state(thread_config)
                 if snap and snap.tasks:
                     for task in snap.tasks:
@@ -687,6 +702,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 turn_dialogue = _turn_dialogues.pop(session_id, [])
                 final_answer = answer
                 if turn_dialogue:
+                    from src.agents.interviewer_agent import format_dialogue_transcript
+
                     transcript = format_dialogue_transcript(turn_dialogue)
                     if answer and answer not in transcript:
                         final_answer = f"{transcript}\n\n[CANDIDATE FINAL NOTE]\n{answer}"
@@ -699,6 +716,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 }
 
                 try:
+                    from langgraph.types import Command
+
                     new_state, interrupt_val, error_message = await _run_graph_streaming(
                         websocket, Command(resume=resume_payload), thread_config, prev_state,
                     )
@@ -733,7 +752,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
 
 @app.get("/api/sessions/{session_id}/state")
 async def get_session_state(session_id: str) -> dict:
-    graph = get_graph()
+    graph = _get_graph()
     thread_config = {"configurable": {"thread_id": session_id}}
     snap = graph.get_state(thread_config)
     if snap:

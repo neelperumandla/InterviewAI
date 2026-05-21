@@ -2,6 +2,12 @@ from typing import Annotated, TypedDict
 from langgraph.graph.message import add_messages
 
 
+class CoachTurn(TypedDict, total=False):
+    mode: str
+    content: str
+    reply: str
+
+
 class TopicRecord(TypedDict):
     topic: str
     attempt: int
@@ -12,6 +18,8 @@ class TopicRecord(TypedDict):
     feedback: str             # final published feedback
     critique_notes: str       # what the Critique Agent changed (internal)
     passed: bool
+    interview_phase: str      # primary | follow_up
+    coach_messages: list      # coach exchanges during this turn
 
 
 class InterviewState(TypedDict):
@@ -31,12 +39,16 @@ class InterviewState(TypedDict):
     research_attempts: int
     research_quality: str     # "thin" | "good" | "excellent"
     interview_type: str       # "ml_focused" | "behavioral" | "technical" | "general"
+    interview_template: dict  # format, primary_questions, follow_ups_per_problem, ...
 
     # ── Interview topics (set by Research Agent; calibration uses first N) ──
     interview_topics: list[str]
+    interview_phase: str      # primary | follow_up
+    primary_question_stem: str  # original problem (for follow-ups)
     current_topic_index: int
     questions_answered: int       # calibration progress (0..CALIBRATION_QUESTION_COUNT)
     research_from_cache: bool
+    calibration_questions_asked: list[str]  # prior problem stems to avoid duplicates
 
     # ── Current Q&A turn ─────────────────────────────────────────────────────
     current_question: str
@@ -45,6 +57,7 @@ class InterviewState(TypedDict):
 
     # ── User answer ───────────────────────────────────────────────────────────
     user_answer: str
+    coach_messages: list      # current-turn coach log (cleared each new question)
 
     # ── Evaluation (raw, before Critique Agent reviews it) ───────────────────
     evaluation_score: float       # 0–100, raw from Evaluation Agent

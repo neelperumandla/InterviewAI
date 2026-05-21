@@ -22,6 +22,15 @@ export function isCodingQuestion(text: string): boolean {
   return /SAMPLE_INPUT_BEGIN/i.test(text)
 }
 
+function formatSampleBlock(value: string): string {
+  const v = value.trim()
+  if (!v) return '(not provided)'
+  if (/^\(see problem description\)$/i.test(v)) {
+    return 'See problem description above for this example.'
+  }
+  return v
+}
+
 function useCodingProblem(questionText: string) {
   return useMemo(() => {
     const sampleInput = extractBetween(questionText, 'SAMPLE_INPUT_BEGIN', 'SAMPLE_INPUT_END')
@@ -56,7 +65,7 @@ export function CodingProblem({ questionText }: CodingProblemProps) {
             Sample Input
           </p>
           <pre className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
-            {sampleInput || '(not provided)'}
+            {formatSampleBlock(sampleInput)}
           </pre>
         </div>
         <div className="bg-[#0f1117] border border-slate-700/40 rounded-xl p-4">
@@ -64,7 +73,7 @@ export function CodingProblem({ questionText }: CodingProblemProps) {
             Expected Output
           </p>
           <pre className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
-            {expectedOutput || '(not provided)'}
+            {formatSampleBlock(expectedOutput)}
           </pre>
         </div>
       </div>

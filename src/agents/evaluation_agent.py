@@ -52,8 +52,24 @@ def evaluation_node(state: InterviewState) -> dict:
     current_topic = topics[idx] if idx < len(topics) else "unknown"
     difficulty = state.get("question_difficulty", "medium")
     topic_attempts = state.get("topic_attempts", {})
-    attempt_num = topic_attempts.get(current_topic, 1)
+    attempt_num = topic_attempts.get(current_topic, state.get("questions_answered", 0) + 1)
     question_text = state.get("current_question", "")
+    phase = state.get("interview_phase", "primary")
+    coach_msgs = state.get("coach_messages", [])
+    coach_blurb = ""
+    if coach_msgs:
+        coach_blurb = "\n\nCoach assistance during this turn (factor into score — heavy reliance lowers independence):\n"
+        for c in coach_msgs:
+            coach_blurb += f"- [{c.get('mode', 'coach')}] candidate: {c.get('content', '')[:150]}\n"
+            if c.get("reply"):
+                coach_blurb += f"  coach: {c.get('reply', '')[:150]}\n"
+
+    dialogue_note = ""
+    if phase == "follow_up":
+        dialogue_note = (
+            "\n\nThis was a live follow-up dialogue. Grade the full exchange in the answer "
+            "(interviewer probes + candidate replies), not only the first sentence.\n"
+        )
 
     system_prompt = _SYSTEM_PROMPT.format(
         threshold=config.PASS_SCORE_THRESHOLD,
@@ -66,15 +82,17 @@ Role: {state.get('role')}
 Curriculum category (do NOT use this alone to identify the problem): {current_topic}
 Interview Type: {state.get('interview_type', 'general')}
 Question difficulty: {difficulty}
-Attempt: {attempt_num}
+Turn: {attempt_num}
+Phase: {phase} (primary = main problem, follow_up = follow-up on same stem)
 
 Question asked (this is the ONLY problem definition to grade against):
 {question_text}
 
 Candidate's answer:
 {state.get('user_answer', '')}
+{coach_blurb}{dialogue_note}
 
-Evaluate whether the answer solves the problem described under "Question asked".
+Evaluate whether the answer addresses the question for this phase. For follow-ups, grade the follow-up prompt, not only the original problem.
 """
 
     response = llm.invoke([

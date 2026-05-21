@@ -11,6 +11,8 @@ Protocol
 Client → Server:
   { "type": "start",  "name": "...", "company": "...", "role": "..." }
   { "type": "answer", "content": "..." }
+  { "type": "coach", "mode": "syntax|think_aloud|sanity_check|complexity", "content": "..." }
+  { "type": "turn_chat", "content": "..." }
 
 Server → Client:
   { "type": "status",         "message": "Researching Google..." }
@@ -39,7 +41,15 @@ from starlette.websockets import WebSocketState
 
 from src.config import config
 from src.graph import get_graph
+from src.interview_template import total_turns
+from src.agents.coach_agent import coach_reply
+from src.agents.interviewer_agent import format_dialogue_transcript, interviewer_probe
 from src.memory.history import get_candidate_profile
+
+# Per-session coach log while graph is interrupted (merged into answer resume).
+_coach_logs: dict[str, list[dict]] = {}
+# Follow-up turn dialogue (interviewer ↔ candidate) until "answer" ends the turn.
+_turn_dialogues: dict[str, list[dict]] = {}
 
 _FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 
@@ -159,9 +169,22 @@ async def _run_graph_streaming(
             error_message = item[3]
             # Final diff in case the last transition wasn't streamed
             await _broadcast_state_events(ws, current_prev, latest_state)
-            if interrupted_value:
-                await _send(ws, {"type": "question", "data": interrupted_value})
-            elif error_message:
+            # Ensure the client gets the open question after graph pauses at interrupt.
+            if interrupted_value and not error_message:
+                payload = _question_payload_from_state(latest_state)
+                if payload:
+                    slot = payload.get("question_index", 1)
+                    phase = payload.get("phase", "primary")
+                    if not (slot > 1 and phase != "follow_up"):
+                        await _send(ws, {"type": "question", "data": payload})
+                        await _send(ws, {
+                            "type": "status",
+                            "message": (
+                                f"Turn {slot} ready — "
+                                "submit your answer when ready."
+                            ),
+                        })
+            if error_message:
                 await _send(ws, {"type": "error", "message": error_message})
             break
 
@@ -194,14 +217,33 @@ def _question_payload_from_state(state: dict) -> dict | None:
     topics = state.get("interview_topics", [])
     idx = state.get("current_topic_index", 0)
     topic = topics[idx] if idx < len(topics) else ""
-    attempts = state.get("topic_attempts", {})
+    template = state.get("interview_template") or {}
+    slot = state.get("questions_answered", 0) + 1
+    total = total_turns(template)
+    phase = state.get("interview_phase", "primary")
     return {
         "topic": topic,
         "question": question,
-        "attempt": attempts.get(topic, 1),
-        "max_attempts": config.MAX_TOPIC_ATTEMPTS,
+        "question_index": slot,
+        "attempt": slot,
+        "max_attempts": 1,
         "difficulty": state.get("question_difficulty", "medium"),
+        "phase": phase,
+        "response_mode": "verbal" if phase == "follow_up" else "code",
+        "total_turns": total,
+        "format_label": template.get("format_label", ""),
     }
+
+
+def _open_interrupt_payload(graph, thread_config: dict) -> dict | None:
+    snap = graph.get_state(thread_config)
+    if not snap or not snap.tasks:
+        return None
+    for task in snap.tasks:
+        if task.interrupts:
+            val = task.interrupts[0].value
+            return val if isinstance(val, dict) else None
+    return None
 
 
 def _final_score(state: dict) -> float | None:
@@ -232,29 +274,40 @@ async def _broadcast_state_events(
                 "interview_type": new_state.get("interview_type"),
                 "summary":        new_state.get("research_results", ""),
                 "from_cache":     bool(new_state.get("research_from_cache")),
+                "interview_template": new_state.get("interview_template", {}),
             },
         })
-        n = min(config.CALIBRATION_QUESTION_COUNT, len(new_state.get("interview_topics", [])))
+        tmpl = new_state.get("interview_template") or {}
+        n = total_turns(tmpl)
+        label = tmpl.get("format_label", "coding interview")
         await _send(ws, {
             "type": "status",
             "message": (
-                f"Research ready — generating question 1 of {n} "
+                f"Research ready ({label}) — generating turn 1 of {n} "
                 "(this usually takes 10–30 seconds)…"
             ),
         })
 
-    # New calibration question generated — push immediately (don't wait for graph end)
+    # New question — only when problem text actually changes (avoids sending the
+    # previous turn's problem with the next question_index right after critique).
     prev_q = (prev_state.get("current_question") or "").strip()
     new_q = (new_state.get("current_question") or "").strip()
     if new_q and new_q != prev_q:
         payload = _question_payload_from_state(new_state)
         if payload:
-            answered = new_state.get("questions_answered", 0)
-            await _send(ws, {"type": "question", "data": payload})
-            await _send(ws, {
-                "type": "status",
-                "message": f"Question {answered + 1} ready.",
-            })
+            slot = payload.get("question_index", 1)
+            phase = payload.get("phase", "primary")
+            # Extra guard: turn 2+ must be a follow-up, not recycled primary text.
+            if slot > 1 and phase != "follow_up":
+                pass
+            else:
+                await _send(ws, {"type": "question", "data": payload})
+                slot = payload.get("question_index", 1)
+                phase_label = "Follow-up" if phase == "follow_up" else "Problem"
+                await _send(ws, {
+                    "type": "status",
+                    "message": f"{phase_label} {slot} ready.",
+                })
 
     # Critique result published (evaluation + critique both done)
     if (
@@ -268,6 +321,7 @@ async def _broadcast_state_events(
             "type": "evaluation",
             "data": {
                 "topic":          record.get("topic", ""),
+                "question_index": record.get("attempt", 1),
                 "attempt":        record.get("attempt", 1),
                 "question":       record.get("question", new_state.get("current_question", "")),
                 "score":          score,
@@ -275,10 +329,13 @@ async def _broadcast_state_events(
                 "feedback":       new_state.get("critique_feedback"),
                 "critique_notes": new_state.get("critique_notes", ""),
                 "passed":         (score or 0) >= config.PASS_SCORE_THRESHOLD,
+                "phase":          record.get("interview_phase", "primary"),
+                "coach_count":    len(record.get("coach_messages") or []),
             },
         })
         answered = new_state.get("questions_answered", 0)
-        n = config.CALIBRATION_QUESTION_COUNT
+        tmpl = new_state.get("interview_template") or {}
+        n = total_turns(tmpl) if tmpl else config.CALIBRATION_QUESTION_COUNT
         if answered < n:
             await _send(ws, {
                 "type": "status",
@@ -393,10 +450,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                     "research_attempts":      0,
                     "research_quality":       "",
                     "interview_type":         "general",
+                    "interview_template":     {},
                     "interview_topics":       [],
+                    "interview_phase":        "primary",
+                    "primary_question_stem":  "",
                     "current_topic_index":    0,
                     "questions_answered":     0,
+                    "calibration_questions_asked": [],
                     "research_from_cache":    False,
+                    "coach_messages":         [],
                     "current_question":       "",
                     "question_difficulty":    "medium",
                     "follow_up_context":      "",
@@ -451,6 +513,122 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 prev_state = new_state
                 if new_state.get("session_summary"):
                     await _send(websocket, {"type": "done"})
+                _coach_logs.pop(session_id, None)
+                _turn_dialogues.pop(session_id, None)
+
+            # ── Coach (while a question is open) ─────────────────────────────
+            elif msg_type == "coach":
+                content = message.get("content", "").strip()
+                mode = (message.get("mode") or "think_aloud").strip().lower()
+                if mode not in ("syntax", "think_aloud", "sanity_check", "complexity"):
+                    mode = "think_aloud"
+                if not content:
+                    continue
+
+                graph = get_graph()
+                open_q = _open_interrupt_payload(graph, thread_config)
+                if not open_q:
+                    await _send(websocket, {
+                        "type": "error",
+                        "message": "Coach is only available while a question is open.",
+                    })
+                    continue
+
+                question_text = open_q.get("question") or prev_state.get("current_question", "")
+                topic = open_q.get("topic", "")
+                company = prev_state.get("company", "")
+                role = prev_state.get("role", "")
+                log = _coach_logs.setdefault(session_id, [])
+
+                await _send(websocket, {
+                    "type": "status",
+                    "message": "Coach is thinking…",
+                })
+
+                try:
+                    reply = await asyncio.to_thread(
+                        coach_reply,
+                        mode=mode,
+                        user_message=content,
+                        question_text=question_text,
+                        topic=topic,
+                        company=company,
+                        role=role,
+                        prior_turns=log,
+                    )
+                except Exception as e:
+                    await _send(websocket, {
+                        "type": "error",
+                        "message": f"Coach error: {e}",
+                    })
+                    continue
+
+                entry = {"mode": mode, "content": content, "reply": reply}
+                log.append(entry)
+                await _send(websocket, {
+                    "type": "coach_reply",
+                    "data": entry,
+                })
+                await _send(websocket, {"type": "status", "message": ""})
+
+            # ── Follow-up dialogue (interviewer probes; does not end the turn) ─
+            elif msg_type == "turn_chat":
+                content = message.get("content", "").strip()
+                if not content:
+                    continue
+
+                graph = get_graph()
+                open_q = _open_interrupt_payload(graph, thread_config)
+                if not open_q:
+                    await _send(websocket, {
+                        "type": "error",
+                        "message": "Dialogue is only available while a follow-up is open.",
+                    })
+                    continue
+                if open_q.get("phase") != "follow_up" and open_q.get("response_mode") != "verbal":
+                    await _send(websocket, {
+                        "type": "error",
+                        "message": "Turn chat is only for follow-up questions.",
+                    })
+                    continue
+
+                question_text = open_q.get("question") or prev_state.get("current_question", "")
+                dialogue = _turn_dialogues.setdefault(session_id, [])
+                if not dialogue:
+                    dialogue.append({"role": "interviewer", "content": question_text})
+                if not (
+                    dialogue
+                    and dialogue[-1].get("role") == "candidate"
+                    and dialogue[-1].get("content") == content
+                ):
+                    dialogue.append({"role": "candidate", "content": content})
+
+                await _send(websocket, {"type": "status", "message": "Interviewer is thinking…"})
+
+                try:
+                    reply = await asyncio.to_thread(
+                        interviewer_probe,
+                        company=prev_state.get("company", ""),
+                        role=prev_state.get("role", ""),
+                        topic=open_q.get("topic", ""),
+                        follow_up_prompt=question_text,
+                        primary_stem=prev_state.get("primary_question_stem", question_text),
+                        dialogue=dialogue[:-1],
+                        candidate_message=content,
+                    )
+                except Exception as e:
+                    await _send(websocket, {
+                        "type": "error",
+                        "message": f"Interviewer error: {e}",
+                    })
+                    continue
+
+                dialogue.append({"role": "interviewer", "content": reply})
+                await _send(websocket, {
+                    "type": "interviewer_reply",
+                    "data": {"role": "interviewer", "content": reply},
+                })
+                await _send(websocket, {"type": "status", "message": ""})
 
             # ── Candidate answer ──────────────────────────────────────────────
             elif msg_type == "answer":
@@ -504,9 +682,24 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                         "Still working (evaluation → critique → next question)",
                     )
                 )
+                coach_log = _coach_logs.pop(session_id, [])
+                turn_dialogue = _turn_dialogues.pop(session_id, [])
+                final_answer = answer
+                if turn_dialogue:
+                    transcript = format_dialogue_transcript(turn_dialogue)
+                    if answer and answer not in transcript:
+                        final_answer = f"{transcript}\n\n[CANDIDATE FINAL NOTE]\n{answer}"
+                    else:
+                        final_answer = transcript
+                resume_payload = {
+                    "answer": final_answer,
+                    "coach_log": coach_log,
+                    "turn_dialogue": turn_dialogue,
+                }
+
                 try:
                     new_state, interrupt_val, error_message = await _run_graph_streaming(
-                        websocket, Command(resume=answer), thread_config, prev_state,
+                        websocket, Command(resume=resume_payload), thread_config, prev_state,
                     )
                 finally:
                     status_cancel.set()
@@ -525,6 +718,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 prev_state = new_state
                 if new_state.get("session_summary"):
                     await _send(websocket, {"type": "done"})
+                _coach_logs.pop(session_id, None)
+                _turn_dialogues.pop(session_id, None)
 
     except WebSocketDisconnect:
         pass

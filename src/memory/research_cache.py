@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from src.config import config
+from src.interview_template import default_template_for_company, normalize_template
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -24,9 +25,16 @@ def init_research_cache_db() -> None:
             topics_json     TEXT NOT NULL,
             quality         TEXT NOT NULL,
             researched_at   TEXT NOT NULL,
+            template_json   TEXT,
             UNIQUE(company_key, role_key)
         )
     """)
+    try:
+        conn.execute(
+            "ALTER TABLE company_research ADD COLUMN template_json TEXT"
+        )
+    except sqlite3.OperationalError:
+        pass  # column exists
     conn.commit()
     conn.close()
 
@@ -42,7 +50,7 @@ def get_cached_research(company: str, role: str) -> dict | None:
     conn = _get_conn()
     row = conn.execute(
         """
-        SELECT summary, interview_type, topics_json, quality, researched_at
+        SELECT summary, interview_type, topics_json, quality, researched_at, template_json
         FROM company_research
         WHERE company_key = ? AND role_key = ?
         """,
@@ -64,11 +72,20 @@ def get_cached_research(company: str, role: str) -> dict | None:
     except json.JSONDecodeError:
         topics = []
 
+    template: dict = {}
+    if row["template_json"]:
+        try:
+            template = json.loads(row["template_json"])
+        except json.JSONDecodeError:
+            template = {}
+    template = normalize_template(template, company)
+
     return {
         "summary": row["summary"],
         "interview_type": row["interview_type"],
         "topics": topics,
         "quality": row["quality"],
+        "interview_template": template,
         "researched_at": row["researched_at"],
         "cache_age_days": age.days,
     }
@@ -81,21 +98,25 @@ def save_research_cache(
     interview_type: str,
     topics: list[str],
     quality: str,
+    interview_template: dict | None = None,
 ) -> None:
     init_research_cache_db()
     ck, rk = _keys(company, role)
+    tmpl = normalize_template(interview_template, company)
     conn = _get_conn()
     conn.execute(
         """
         INSERT INTO company_research
-            (company_key, role_key, summary, interview_type, topics_json, quality, researched_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (company_key, role_key, summary, interview_type, topics_json, quality,
+             researched_at, template_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(company_key, role_key) DO UPDATE SET
             summary = excluded.summary,
             interview_type = excluded.interview_type,
             topics_json = excluded.topics_json,
             quality = excluded.quality,
-            researched_at = excluded.researched_at
+            researched_at = excluded.researched_at,
+            template_json = excluded.template_json
         """,
         (
             ck,
@@ -105,6 +126,7 @@ def save_research_cache(
             json.dumps(topics),
             quality,
             datetime.now(timezone.utc).isoformat(),
+            json.dumps(tmpl),
         ),
     )
     conn.commit()

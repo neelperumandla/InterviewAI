@@ -24,6 +24,9 @@ class Config:
     # Calibration: fixed number of skill-gauging questions per session
     CALIBRATION_QUESTION_COUNT: int = int(os.getenv("CALIBRATION_QUESTION_COUNT", "3"))
 
+    # Skip the critic LLM during calibration (evaluation output is used as-is)
+    SKIP_CRITIQUE_LLM: bool = os.getenv("SKIP_CRITIQUE_LLM", "true").lower() in ("1", "true", "yes")
+
     # Scoring thresholds (0-100 scale)
     PASS_SCORE_THRESHOLD: float = float(os.getenv("PASS_SCORE_THRESHOLD", "60.0"))
     MAX_TOPIC_ATTEMPTS: int = int(os.getenv("MAX_TOPIC_ATTEMPTS", "1"))
@@ -73,8 +76,11 @@ class Config:
             "evaluation": cls.GEMINI_API_KEY_EVALUATION,
             "critic": cls.GEMINI_API_KEY_CRITIC,
             "memory": cls.GEMINI_API_KEY_MEMORY,
+            # Coach shares interview key unless GEMINI_API_KEY is set as fallback
+            "coach": cls.GEMINI_API_KEY_INTERVIEW,
         }
-        return agent_map.get(agent_name, "") or cls.GEMINI_API_KEY_FALLBACK
+        key = agent_map.get(agent_name, "") or cls.GEMINI_API_KEY_FALLBACK
+        return key.strip()
 
 
 config = Config()

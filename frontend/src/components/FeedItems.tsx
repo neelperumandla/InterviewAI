@@ -1,4 +1,4 @@
-import type { FeedItem, QuestionData, EvaluationData, ResearchData } from '../types/interview'
+import type { FeedItem, QuestionData, EvaluationData, ResearchData, CoachEntry } from '../types/interview'
 import { PASS_THRESHOLD } from '../constants'
 import { stripQuestionMarkers } from './CodeSandbox'
 
@@ -8,6 +8,7 @@ export function FeedItemView({ item }: { item: FeedItem }) {
     case 'question': return <QuestionCard data={item.data as QuestionData} />
     case 'answer':   return <AnswerCard text={(item.data as { text: string }).text} />
     case 'evaluation': return <EvaluationCard data={item.data as EvaluationData} />
+    case 'coach': return <CoachCard data={item.data as CoachEntry} />
     default: return null
   }
 }
@@ -28,6 +29,11 @@ function ResearchCard({ data }: { data: ResearchData }) {
         <span className="text-xs text-slate-500">·</span>
         <span className="text-xs text-slate-400 italic">{data.interview_type?.replace('_', ' ')}</span>
       </div>
+      {data.interview_template?.format_label && (
+        <p className="text-xs text-indigo-300 mb-2 font-medium">
+          Format: {data.interview_template.format_label}
+        </p>
+      )}
       <p className="text-sm text-slate-300 leading-relaxed mb-3">{data.summary}</p>
       <div className="flex flex-wrap gap-2">
         {data.topics.map((t, i) => (
@@ -56,8 +62,12 @@ function QuestionCard({ data }: { data: QuestionData }) {
         <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${diffColor}`}>
           {data.difficulty}
         </span>
+        {data.phase === 'follow_up' && (
+          <span className="text-xs text-slate-400">Follow-up</span>
+        )}
         <span className="text-xs text-slate-500 ml-auto">
-          Attempt {data.attempt}/{data.max_attempts}
+          Turn {data.question_index ?? data.attempt}
+          {data.total_turns ? ` / ${data.total_turns}` : ''}
         </span>
       </div>
       <p className="text-white text-base leading-relaxed font-medium">{stripped}</p>
@@ -127,6 +137,18 @@ function EvaluationCard({ data }: { data: EvaluationData }) {
           </div>
         </details>
       )}
+    </div>
+  )
+}
+
+function CoachCard({ data }: { data: CoachEntry }) {
+  return (
+    <div className="ml-6 rounded-xl border border-indigo-700/30 bg-indigo-950/20 p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400 mb-1">
+        Coach · {data.mode.replace('_', ' ')}
+      </p>
+      <p className="text-xs text-slate-400 mb-1">{data.content}</p>
+      <p className="text-sm text-slate-200 leading-relaxed">{data.reply}</p>
     </div>
   )
 }

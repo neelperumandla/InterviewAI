@@ -1,51 +1,104 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { QuestionData, EvaluationData } from '../types/interview'
-import { CALIBRATION_QUESTION_COUNT, PASS_THRESHOLD } from '../constants'
+import { PASS_THRESHOLD } from '../constants'
+import { CoachDrawer } from './CoachDrawer'
+import type { CoachEntry } from '../types/interview'
 import {
   CodeEditor,
   CodingProblem,
   isCodingQuestion,
   stripQuestionMarkers,
 } from './CodeSandbox'
+import { TurnAnswerPanel } from './TurnAnswerPanel'
+import { FollowUpDialoguePanel } from './FollowUpDialoguePanel'
+import type { TurnDialogueEntry } from '../types/interview'
 import type { QuestionRecord } from './ProblemPanel'
 
 interface Props {
-  questions: QuestionRecord[]
+  slots: (QuestionRecord | null)[]
   calibrationTopics: string[]
+  totalTurns: number
   selectedIdx: number
   onSelectIdx: (idx: number) => void
+  currentQuestion: QuestionData | null
+  coachThread: CoachEntry[]
+  coachThinking: boolean
+  turnDialogue: TurnDialogueEntry[]
+  interviewerThinking: boolean
+  sendTurnChat: (content: string) => void
   hasLiveQuestion: boolean
   isProcessing: boolean
   onSubmit: (answer: string) => void
+  onCoachMessage: (mode: string, content: string) => void
 }
 
 export function QuestionsWorkspace({
-  questions,
+  slots,
   calibrationTopics,
+  totalTurns,
   selectedIdx,
   onSelectIdx,
+  currentQuestion,
+  coachThread,
+  coachThinking,
+  turnDialogue,
+  interviewerThinking,
+  sendTurnChat,
   hasLiveQuestion,
   isProcessing,
   onSubmit,
+  onCoachMessage,
 }: Props) {
-  const safeIdx = Math.min(Math.max(0, selectedIdx), CALIBRATION_QUESTION_COUNT - 1)
-  const selected = questions[safeIdx]
-  const isLatest = safeIdx === questions.length - 1
-  const awaitingAnswer = isLatest && hasLiveQuestion && !isProcessing
-  const coding = selected ? isCodingQuestion(selected.data.question) : true
+  const safeIdx = Math.min(Math.max(0, selectedIdx), Math.max(totalTurns, 1) - 1)
+  const selected = slots[safeIdx]
+  const liveSlot =
+    currentQuestion?.question_index != null
+      ? currentQuestion.question_index - 1
+      : currentQuestion?.attempt != null
+        ? currentQuestion.attempt - 1
+        : -1
+  const awaitingAnswer = liveSlot === safeIdx && hasLiveQuestion && !isProcessing
+  const isFollowUpTurn =
+    selected?.data.phase === 'follow_up' || selected?.data.response_mode === 'verbal'
+  const useVerbalPanel =
+    isFollowUpTurn || (selected && !isCodingQuestion(selected.data.question))
+  const coding = selected ? isCodingQuestion(selected.data.question) && !useVerbalPanel : true
+  const answeredCount = slots.filter(s => s?.evaluation).length
+  const [coachOpen, setCoachOpen] = useState(false)
+  const prevCoachCount = useRef(0)
+
+  // Open drawer when a new coach reply arrives so the answer is visible.
+  useEffect(() => {
+    if (coachThread.length === 0) {
+      prevCoachCount.current = 0
+      return
+    }
+    if (coachThread.length > prevCoachCount.current) {
+      setCoachOpen(true)
+    }
+    prevCoachCount.current = coachThread.length
+  }, [coachThread.length])
+
+  const isUnlocked = (i: number) => {
+    if (slots[i]) return true
+    if (hasLiveQuestion && liveSlot === i) return true
+    // Next turn loading after prior feedback (even before question WS arrives).
+    if (isProcessing && i === answeredCount) return true
+    return false
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Q1 / Q2 / Q3 sub-tabs */}
       <div className="flex items-center gap-2 border-b border-slate-700/40 bg-[#1a1f2e] px-4 py-2.5">
-        {Array.from({ length: CALIBRATION_QUESTION_COUNT }, (_, i) => {
-          const q = questions[i]
+        {Array.from({ length: totalTurns }, (_, i) => {
+          const q = slots[i]
           const topic = calibrationTopics[i] ?? q?.data.topic ?? `Question ${i + 1}`
+          const unlocked = isUnlocked(i)
           const status: 'passed' | 'failed' | 'active' | 'locked' =
             q?.evaluation?.passed ? 'passed' :
             q?.evaluation && !q.evaluation.passed ? 'failed' :
-            i === questions.length - 1 && hasLiveQuestion ? 'active' :
-            q ? 'locked' :
+            liveSlot === i && hasLiveQuestion ? 'active' :
+            unlocked ? 'locked' :
             'locked'
           const isSel = i === safeIdx
           const tone =
@@ -59,8 +112,8 @@ export function QuestionsWorkspace({
             <button
               key={i}
               type="button"
-              onClick={() => q && onSelectIdx(i)}
-              disabled={!q}
+              onClick={() => unlocked && onSelectIdx(i)}
+              disabled={!unlocked}
               title={topic}
               className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold ${tone} ${
                 isSel ? 'bg-slate-800 ring-1 ring-indigo-500/40' : ''
@@ -72,54 +125,93 @@ export function QuestionsWorkspace({
           )
         })}
         <span className="ml-auto text-xs text-slate-500">
-          Skill check · {CALIBRATION_QUESTION_COUNT} problems
+          Mock interview · {totalTurns} turn{totalTurns === 1 ? '' : 's'}
         </span>
       </div>
 
       {!selected ? (
         <div className="flex flex-1 items-center justify-center text-slate-500">
           <p className="text-sm">
-            {questions.length === 0
+            {slots.every(s => !s)
               ? 'Research complete — your first question will load shortly.'
               : 'Select an unlocked question above.'}
           </p>
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2">
-          {/* Left: problem statement */}
-          <div className="min-h-0 overflow-y-auto border-b border-slate-700/40 px-5 py-4 lg:border-b-0 lg:border-r">
-            <QuestionMeta data={selected.data} />
-            {coding ? (
-              <CodingProblem questionText={selected.data.question} />
-            ) : (
-              <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
-                {stripQuestionMarkers(selected.data.question)}
-              </p>
-            )}
-          </div>
-
-          {/* Right: editor + feedback */}
-          <div className="flex min-h-0 flex-col">
-            <div className="min-h-0 flex-1 flex flex-col">
+        <div className="relative min-h-0 flex-1">
+          <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-2">
+            <div className="min-h-0 overflow-y-auto border-b border-slate-700/40 px-5 py-4 lg:border-b-0 lg:border-r">
+              <QuestionMeta data={selected.data} />
               {coding ? (
-                <div className="flex min-h-0 flex-1 flex-col border-b border-slate-700/40">
+                <CodingProblem questionText={selected.data.question} />
+              ) : (
+                <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
+                  {stripQuestionMarkers(selected.data.question)}
+                </p>
+              )}
+            </div>
+
+            <div className="flex min-h-0 flex-col">
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-700/40 bg-[#141824] px-3 py-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  {useVerbalPanel ? 'Your response' : 'Code editor'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCoachOpen(true)}
+                  disabled={!awaitingAnswer && coachThread.length === 0}
+                  className="rounded-lg border border-indigo-600/40 bg-indigo-600/15 px-3 py-1 text-xs font-semibold text-indigo-200 hover:bg-indigo-600/25 disabled:opacity-40"
+                >
+                  Open coach
+                  {coachThread.length > 0 && (
+                    <span className="ml-1.5 rounded-full bg-indigo-500 px-1.5 text-[10px] text-white">
+                      {coachThread.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 flex flex-col">
+                {useVerbalPanel && isFollowUpTurn ? (
+                  <FollowUpDialoguePanel
+                    dialogue={liveSlot === safeIdx ? turnDialogue : []}
+                    disabled={!awaitingAnswer}
+                    isThinking={interviewerThinking}
+                    onSendMessage={sendTurnChat}
+                    onSubmitTurn={onSubmit}
+                  />
+                ) : useVerbalPanel ? (
+                  <TurnAnswerPanel
+                    phase={selected.data.phase ?? 'follow_up'}
+                    disabled={!awaitingAnswer}
+                    onSubmit={onSubmit}
+                  />
+                ) : (
                   <CodeEditor
                     questionText={selected.data.question}
                     disabled={!awaitingAnswer}
                     onSubmit={onSubmit}
                     fillHeight
                   />
-                </div>
-              ) : (
-                <div className="p-4 text-sm text-slate-400">Text answer mode — use Chat tab.</div>
-              )}
-            </div>
+                )}
+              </div>
 
-            <FeedbackPanel
-              evaluation={selected.evaluation}
-              visible={!!selected.evaluation}
-            />
+              <FeedbackPanel
+                evaluation={selected.evaluation}
+                visible={!!selected.evaluation}
+              />
+            </div>
           </div>
+
+          <CoachDrawer
+            open={coachOpen}
+            onOpenChange={setCoachOpen}
+            thread={coachThread}
+            disabled={!awaitingAnswer}
+            isThinking={coachThinking}
+            onSend={onCoachMessage}
+            verbalTurn={!!isFollowUpTurn && awaitingAnswer}
+          />
         </div>
       )}
     </div>
@@ -127,6 +219,7 @@ export function QuestionsWorkspace({
 }
 
 function QuestionMeta({ data }: { data: QuestionData }) {
+  const phaseLabel = data.phase === 'follow_up' ? 'Follow-up' : 'Main problem'
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
       <span className="rounded-full border border-indigo-600/30 bg-indigo-600/20 px-2.5 py-1 text-xs font-semibold text-indigo-300">
@@ -135,6 +228,11 @@ function QuestionMeta({ data }: { data: QuestionData }) {
       <span className="rounded-full border border-yellow-500/20 bg-yellow-500/10 px-2.5 py-1 text-xs font-semibold text-yellow-300">
         {data.difficulty}
       </span>
+      {data.phase && (
+        <span className="rounded-full border border-slate-600/40 bg-slate-800/60 px-2.5 py-1 text-xs text-slate-300">
+          {phaseLabel}
+        </span>
+      )}
     </div>
   )
 }
@@ -153,13 +251,7 @@ function FeedbackPanel({
   }, [visible, evaluation?.feedback])
 
   if (!visible || !evaluation) {
-    return (
-      <div className="shrink-0 border-t border-slate-700/40 bg-[#141824] px-4 py-3">
-        <p className="text-xs text-slate-500">
-          Feedback will appear here after you submit.
-        </p>
-      </div>
-    )
+    return null
   }
 
   const pct = Math.min(100, Math.max(0, evaluation.score ?? 0))
@@ -169,7 +261,7 @@ function FeedbackPanel({
   return (
     <div
       ref={scrollRef}
-      className="max-h-[38vh] shrink-0 overflow-y-auto border-t border-slate-700/40 bg-[#141824] px-4 py-4"
+      className="max-h-[32vh] shrink-0 overflow-y-auto border-t border-slate-700/40 bg-[#141824] px-4 py-4"
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -195,6 +287,12 @@ function FeedbackPanel({
           <span className="text-sm text-slate-500">/100</span>
         </span>
       </div>
+
+      {evaluation.coach_count != null && evaluation.coach_count > 0 && (
+        <p className="mb-3 text-xs text-slate-500">
+          Coach messages this turn: {evaluation.coach_count} (factored into score)
+        </p>
+      )}
 
       <div className="prose prose-invert max-w-none text-sm leading-relaxed text-slate-200">
         <FormattedFeedback text={evaluation.feedback} />

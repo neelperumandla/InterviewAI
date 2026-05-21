@@ -8,16 +8,43 @@ export interface TopicState {
   score?: number
 }
 
+export interface InterviewTemplate {
+  format: 'one_problem_followups' | 'multi_problem' | string
+  primary_questions: number
+  follow_ups_per_problem: number
+  format_label: string
+  estimated_minutes?: number
+}
+
+export interface CoachEntry {
+  mode: string
+  content: string
+  reply: string
+}
+
+export interface TurnDialogueEntry {
+  role: 'interviewer' | 'candidate'
+  content: string
+}
+
 export interface QuestionData {
   topic: string
   question: string
+  /** Turn index 1..N within session. */
+  question_index?: number
   attempt: number
   max_attempts: number
   difficulty: string
+  phase?: 'primary' | 'follow_up' | string
+  /** code = editor submit; verbal = follow-up text box */
+  response_mode?: 'code' | 'verbal'
+  total_turns?: number
+  format_label?: string
 }
 
 export interface EvaluationData {
   topic?: string
+  question_index?: number
   attempt?: number
   question?: string
   score: number
@@ -25,6 +52,8 @@ export interface EvaluationData {
   feedback: string
   critique_notes: string
   passed: boolean
+  phase?: string
+  coach_count?: number
 }
 
 export interface ResearchData {
@@ -33,6 +62,7 @@ export interface ResearchData {
   interview_type: string
   summary: string
   from_cache?: boolean
+  interview_template?: InterviewTemplate
 }
 
 export interface SessionReviewData {
@@ -65,6 +95,8 @@ export type WsMessage =
   | { type: 'research_done';  data: ResearchData }
   | { type: 'question';       data: QuestionData }
   | { type: 'evaluation';     data: EvaluationData }
+  | { type: 'coach_reply';    data: CoachEntry }
+  | { type: 'interviewer_reply'; data: TurnDialogueEntry }
   | { type: 'orchestrator';   data: { notes: string } }
   | { type: 'session_review'; data: SessionReviewData }
   | { type: 'error';          message: string }
@@ -72,7 +104,7 @@ export type WsMessage =
 
 export interface FeedItem {
   id: string
-  kind: 'question' | 'answer' | 'evaluation' | 'status' | 'research'
+  kind: 'question' | 'answer' | 'evaluation' | 'status' | 'research' | 'coach'
   data: unknown
   timestamp: number
 }

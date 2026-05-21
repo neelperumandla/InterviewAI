@@ -15,7 +15,7 @@ Env-var overrides (all optional):
   TEMP_<AGENT>    — float, default per agent
   RPM_<AGENT>     — requests-per-minute cap for this agent's bucket
 
-<AGENT> is one of: ORCHESTRATOR, RESEARCH, INTERVIEW, EVALUATION, CRITIC, MEMORY.
+<AGENT> is one of: ORCHESTRATOR, RESEARCH, INTERVIEW, EVALUATION, CRITIC, MEMORY, COACH.
 """
 import os
 from functools import lru_cache
@@ -41,6 +41,7 @@ _DEFAULT_MODELS: dict[str, str] = {
     "critic":       "gemini-2.5-flash",
     # Session summary and history ops are lightweight; Flash-lite stays comfortably in free tier
     "memory":       "gemini-2.5-flash-lite",
+    "coach":        "gemini-2.5-flash",
 }
 
 _DEFAULT_TEMPERATURES: dict[str, float] = {
@@ -50,6 +51,7 @@ _DEFAULT_TEMPERATURES: dict[str, float] = {
     "evaluation":   0.0,
     "critic":       0.0,
     "memory":       0.3,
+    "coach":        0.3,
 }
 
 # Conservative per-agent RPM caps. Gemini free-tier ceilings (subject to change):
@@ -66,6 +68,7 @@ _DEFAULT_RPM: dict[str, float] = {
     "evaluation":   6.0,   # on Flash by default; bump down if you switch back to Pro
     "critic":       6.0,   # on Flash by default; bump down if you switch back to Pro
     "memory":       8.0,
+    "coach":        8.0,
 }
 
 
@@ -109,11 +112,18 @@ def get_llm_for_agent(agent_name: str) -> ChatGoogleGenerativeAI:
         max_bucket_size=max(1.0, rpm / 6.0),
     )
 
+    api_key = config.gemini_key_for_agent(agent_name)
+    if not api_key:
+        raise EnvironmentError(
+            f"No Gemini API key for agent '{agent_name}'. "
+            "Set GEMINI_API_KEY in .env or the matching GEMINI_API_KEY_<AGENT> variable. "
+            "Do not rely on gcloud Application Default Credentials for this app."
+        )
+
     return ChatGoogleGenerativeAI(
         model=_resolve_model(agent_name),
-        google_api_key=config.gemini_key_for_agent(agent_name),
+        google_api_key=api_key,
         temperature=_resolve_temperature(agent_name),
         rate_limiter=rate_limiter,
-        # Cap retries — the rate limiter should prevent 429s in the first place.
         max_retries=2,
     )

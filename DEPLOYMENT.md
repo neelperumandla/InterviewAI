@@ -77,7 +77,11 @@ In Vercel → **Settings → Environment Variables** (Production + Preview):
 
 No trailing slash on the path before `/ws` — the app appends `/ws/{sessionId}`.
 
-Redeploy after changing env vars (Vite inlines them at build time).
+Redeploy after changing env vars (Vite inlines them at **build** time — a runtime-only redeploy without rebuild will not pick them up).
+
+**Important:** If you open a URL like `interview-ai-git-main-….vercel.app`, that is a **Preview** deploy. The variable must be enabled for **Preview** (not only Production) in the env var dialog, then trigger a new deployment.
+
+To verify the build saw the variable: Vercel → Deployments → latest deploy → **Build Logs** — you should not see the in-app console error after a correct build; or search the built asset for your Railway hostname.
 
 ### CORS on Railway
 
@@ -112,6 +116,7 @@ Use your real Vercel production (and preview) origins. Avoid `*` in production w
 
 | Symptom | Fix |
 |---------|-----|
+| `VITE_WS_URL is not set` in browser | Name must be exactly `VITE_WS_URL`; enable **Preview** + **Production**; redeploy with **Clear build cache**; confirm Vercel **Root Directory** is `frontend` |
 | WS connects then fails | Check `VITE_WS_URL` uses `wss://` and Railway domain is public |
 | CORS error in browser | Add exact Vercel origin to `CORS_ORIGINS` on Railway |
 | Sessions reset every deploy | Attach Railway volume + `DATA_DIR=/data` |

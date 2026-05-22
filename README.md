@@ -1,145 +1,136 @@
 # Interview Prep AI
 
-An agentic AI system that researches company-specific interview trends, conducts a personalized mock interview, evaluates your answers in real time, and delivers a comprehensive session review.
+**Live app:** [https://interview-ai-jade-six.vercel.app/](https://interview-ai-jade-six.vercel.app/)
+
+Company-targeted mock coding interviews powered by a multi-agent LangGraph backend and a React UI. The system researches how a company interviews for your role, runs a realistic session (e.g. one LeetCode-style problem plus follow-ups for Google), scores your work, and ends with a session review.
+
+## What you get
+
+- **Company-shaped sessions** — Research (Tavily) infers interview format; templates include *one problem + follow-ups* (Google-style) or *multiple independent problems*.
+- **Live WebSocket UI** — Chat status, question tabs, Monaco-style coding area, and session review.
+- **In-session coach** — Side drawer for hints (syntax, think-aloud, sanity check, complexity); uses the same Gemini key as interview generation.
+- **Follow-up dialogue** — On verbal follow-up turns, chat with an AI interviewer before you submit; transcript is included in evaluation.
+- **Streaming feedback** — Evaluation and critique stream over the socket so long runs don’t look hung.
+- **Persistent research cache** — Company research can be reused (SQLite; use a Railway volume in production).
 
 ## Architecture
 
 ```
-┌─────────────────────────────┐
-│        Orchestrator          │  Central routing brain
-│  - Judges research quality   │  - Re-enters after research and evaluation
-│  - Decides interview scope   │  - Routes dynamically based on scores/quality
-│  - Replans based on evals    │
-└────────────┬────────────────┘
-             │
-┌────────────▼────────────────┐
-│       Research Agent         │  Searches Glassdoor, Blind, LeetCode, etc.
-└────────────┬────────────────┘
-             │ (thin? → retry with broader search)
-┌────────────▼────────────────┐
-│       Interview Agent        │  Generates tailored questions per topic
-│    + Human-in-the-loop       │  Pauses for your answer via LangGraph interrupt
-└────────────┬────────────────┘
-             │
-┌────────────▼────────────────┐
-│      Evaluation Agent        │  Scores 0–10, gives strengths/weaknesses
-└────────────┬────────────────┘
-             │ (score < threshold? → retry | 3 fails → skip & flag)
-┌────────────▼────────────────┐
-│        Critic Agent          │  End-of-session review + study plan
-└────────────┬────────────────┘
-             │
-┌────────────▼────────────────┐
-│      Persistent Memory       │  SQLite via LangGraph checkpointer
-└─────────────────────────────┘
+Browser (Vercel)  ──wss://──►  FastAPI + LangGraph (Railway)
+                                    │
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+              Research          Orchestrator    Session review
+                    │               │
+                    ▼               ├──► Interview (generate → interrupt)
+              Tavily search         ├──► Evaluation → Critic
+                                    └──► SQLite checkpoints + history
+
+During interrupt (open question):
+  Coach sidebar  ──► coach_agent (WebSocket `coach`)
+  Follow-up chat ──► interviewer_agent (WebSocket `turn_chat`)
 ```
 
-## Setup
+**Agents:** orchestrator, research, interview, evaluation, critic, session review, plus **coach** and **interviewer** outside the graph during human-in-the-loop interrupts.
 
-### 1. Clone and install dependencies
+## Quick start (local)
+
+### 1. Backend
 
 ```bash
-git clone <repo>
-cd InterviewAgenticAI
+git clone https://github.com/<your-org>/InterviewAI.git
+cd InterviewAI
 pip install -r requirements.txt
-```
-
-### 2. Configure environment variables
-
-```bash
 cp .env.example .env
-# Edit .env and add your keys
-```
-
-You need:
-- **OPENAI_API_KEY** — from [platform.openai.com](https://platform.openai.com)
-- **TAVILY_API_KEY** — from [tavily.com](https://tavily.com) (free tier available)
-
-### 3. Run the interview
-
-```bash
+# Edit .env: GEMINI_API_KEY, TAVILY_API_KEY
 python main.py
 ```
 
-## How It Works
+API defaults to `http://127.0.0.1:8001` (see `API_PORT` in `.env`).
 
-1. **You provide** the company name and target role
-2. **Research Agent** runs multiple targeted searches to find interview trends, typical questions, and focus areas for that specific company/role
-3. **Orchestrator** evaluates the research quality:
-   - Thin results? → Broadens the search automatically
-   - ML-heavy company? → Flags ML-focused interview topics
-   - Generic/unknown company? → Falls back to role-based topic list
-4. **Interview Agent** asks one question per approved topic, with context from prior answers
-5. **You answer** in the CLI (press Enter twice to submit)
-6. **Evaluation Agent** scores your answer (0–10) with detailed feedback
-7. **Orchestrator** decides:
-   - Score ≥ 6 → pass, next topic
-   - Score < 6, attempt < 3 → retry same topic
-   - 3 failed attempts → skip and flag for study
-8. **Critic Agent** delivers a full session review with an overall score, key gaps, and a prioritized study plan
+### 2. Frontend
 
-## Configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `PASS_SCORE_THRESHOLD` | `60.0` | Minimum score (0–100) to pass a topic |
-| `MAX_TOPIC_ATTEMPTS` | `3` | Max retries before skipping a topic |
-| `RESEARCH_MAX_RETRIES` | `2` | Max research attempts before fallback |
-| `RESEARCH_CACHE_DAYS` | `30` | Reuse cached company research younger than this |
-| `CALIBRATION_QUESTION_COUNT` | `3` | Skill-check coding questions per session |
-| `API_HOST` / `API_PORT` | `0.0.0.0` / `8001` | FastAPI bind address |
-
-### Model & rate-limit overrides (all optional)
-
-Each agent has its own Gemini client with a per-agent **token-bucket rate
-limiter** so we stay inside Gemini free-tier RPM caps. Defaults are
-conservative; override any of them in `.env` if you have paid quota or need
-to downgrade `gemini-2.5-pro` (which has the strictest free quota).
-
-| Variable | Default | Notes |
-|---|---|---|
-| `MODEL_ORCHESTRATOR` | `gemini-2.5-flash` | Routing decisions |
-| `MODEL_RESEARCH` | `gemini-2.5-flash` | Web-search synthesis |
-| `MODEL_INTERVIEW` | `gemini-2.5-flash` | Question generation |
-| `MODEL_EVALUATION` | `gemini-2.5-flash` | Answer scoring (was Pro; downgraded to fit free tier) |
-| `MODEL_CRITIC` | `gemini-2.5-flash` | Reviews the evaluator (was Pro; downgraded to fit free tier) |
-| `MODEL_MEMORY` | `gemini-2.5-flash-lite` | History summarisation |
-| `RPM_ORCHESTRATOR` | `6.0` | Per-agent requests-per-minute cap |
-| `RPM_RESEARCH` | `5.0` | |
-| `RPM_INTERVIEW` | `6.0` | |
-| `RPM_EVALUATION` | `6.0` | On Flash; lower this if you switch back to Pro |
-| `RPM_CRITIC` | `6.0` | On Flash; lower this if you switch back to Pro |
-| `RPM_MEMORY` | `8.0` | |
-| `TEMP_<AGENT>` | per agent | Float, overrides default temperature |
-
-**Want Pro back on Evaluation / Critic?** If you have paid quota and want
-top-quality scoring, override in `.env`:
-
-```
-MODEL_EVALUATION=gemini-2.5-pro
-MODEL_CRITIC=gemini-2.5-pro
-RPM_EVALUATION=2
-RPM_CRITIC=2
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
-## Project Structure
+Open **http://127.0.0.1:5173** — Vite proxies `/ws` to the API. No `VITE_WS_URL` needed locally.
+
+### 3. Optional: single-port UI
+
+```bash
+cd frontend && npm run build
+python main.py
+```
+
+Open **http://127.0.0.1:8001/** for the built app and API together.
+
+## Production deploy
+
+Frontend on **Vercel**, backend on **Railway** (WebSockets must use `wss://` to Railway, not Vercel).
+
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for env vars, `VITE_WS_URL`, CORS, volumes, and troubleshooting.
+
+## Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GEMINI_API_KEY` | Yes* | Single key for all agents (simplest) |
+| `TAVILY_API_KEY` | Yes | Web research |
+| `CORS_ORIGINS` | Prod | Comma-separated Vercel origin(s) on Railway |
+| `DATA_DIR` | Prod | e.g. `/data` with a Railway volume |
+
+\*Or set per-agent `GEMINI_API_KEY_ORCHESTRATOR`, `GEMINI_API_KEY_RESEARCH`, etc.
+
+**Coach & follow-up interviewer** both use the **interview** key slot (`GEMINI_API_KEY_INTERVIEW` or `GEMINI_API_KEY`).
+
+Optional tuning: `PASS_SCORE_THRESHOLD`, `SKIP_CRITIQUE_LLM`, `CALIBRATION_QUESTION_COUNT`, `MODEL_*`, `RPM_*` — see [`.env.example`](.env.example).
+
+## How a session runs
+
+1. You enter name, company, and role (and coding language).
+2. **Research** runs (cached when fresh); orchestrator picks topics and interview template.
+3. **Primary coding problem** — write code, use coach hints, submit.
+4. **Follow-ups** (when template includes them) — dialogue with the interviewer, then submit response.
+5. **Evaluation → critic** — scores and feedback stream back; orchestrator may send the next turn or end the session.
+6. **Session review** — overall tier, summary, and study recommendations.
+
+## Project structure
 
 ```
-InterviewAgenticAI/
-├── main.py                    # CLI entry point
-├── requirements.txt
-├── .env.example
+InterviewAI/
+├── api.py                 # FastAPI + WebSocket protocol
+├── main.py                # Local API launcher
+├── Dockerfile             # Railway image
+├── railway.toml
+├── DEPLOYMENT.md
+├── frontend/              # React + Vite (Vercel)
+│   └── src/
+│       ├── hooks/useInterview.ts
+│       └── components/    # CoachDrawer, FollowUpDialoguePanel, CodeSandbox, …
 └── src/
-    ├── config.py              # Centralized configuration
-    ├── state.py               # LangGraph state definition
-    ├── graph.py               # LangGraph workflow assembly
-    ├── agents/
-    │   ├── research_agent.py  # Web research + synthesis
-    │   ├── orchestrator.py    # Routing intelligence
-    │   ├── interview_agent.py # Question generation + interrupt
-    │   ├── evaluation_agent.py# Answer scoring
-    │   └── critic_agent.py    # Session review
-    ├── tools/
-    │   └── search.py          # Tavily search wrappers
-    └── memory/                # (extensible memory utilities)
+    ├── graph.py           # LangGraph workflow
+    ├── interview_template.py
+    ├── config.py
+    ├── llm_router.py      # Per-agent Gemini models + rate limits
+    └── agents/
+        ├── research_agent.py
+        ├── orchestrator.py
+        ├── interview_agent.py
+        ├── evaluation_agent.py
+        ├── critic_agent.py
+        ├── session_review_agent.py
+        ├── coach_agent.py
+        └── interviewer_agent.py
 ```
+
+## Tech stack
+
+- **Backend:** Python 3.12, FastAPI, LangGraph, LangChain, Google Gemini, Tavily, SQLite
+- **Frontend:** React, TypeScript, Vite, Tailwind CSS
+
+## License
+
+Add your license here if applicable.

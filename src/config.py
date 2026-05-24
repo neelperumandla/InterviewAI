@@ -100,9 +100,9 @@ class Config:
         }
         key = agent_map.get(agent_name, "") or cls.GEMINI_API_KEY_FALLBACK
         if not key.strip() and agent_name == "interviewer":
-            key = cls.GEMINI_API_KEY_INTERVIEW
+            key = cls.GEMINI_API_KEY_INTERVIEW or cls.GEMINI_API_KEY_FALLBACK
         if not key.strip() and agent_name in ("chat", "coach"):
-            key = cls.GEMINI_API_KEY_INTERVIEW
+            key = cls.GEMINI_API_KEY_INTERVIEW or cls.GEMINI_API_KEY_FALLBACK
         return key.strip()
 
     @classmethod

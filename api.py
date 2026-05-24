@@ -740,6 +740,23 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                         "message": f"Evaluation failed: {error_message}",
                     })
                     continue
+
+                answered = new_state.get("questions_answered", 0)
+                tmpl = new_state.get("interview_template") or {}
+                total = _total_turns(tmpl) if tmpl else config.CALIBRATION_QUESTION_COUNT
+                if (
+                    not interrupt_val
+                    and answered < total
+                    and not new_state.get("session_summary")
+                ):
+                    await _send(websocket, {
+                        "type": "error",
+                        "message": (
+                            "The next question did not load. Check server logs and "
+                            "GEMINI_API_KEY_INTERVIEW (or GEMINI_API_KEY)."
+                        ),
+                    })
+
                 prev_state = new_state
                 if new_state.get("session_summary"):
                     await _send(websocket, {"type": "done"})

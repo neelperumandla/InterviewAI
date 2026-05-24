@@ -84,8 +84,28 @@ export function QuestionsWorkspace({
     if (hasLiveQuestion && liveSlot === i) return true
     // Next turn loading after prior feedback (even before question WS arrives).
     if (isProcessing && i === answeredCount) return true
+    // Stay clickable after Q1 feedback while follow-up is generating (isProcessing may
+    // already be false if the socket missed the in-flight question event).
+    if (
+      i === answeredCount
+      && answeredCount > 0
+      && answeredCount < totalTurns
+      && slots[answeredCount - 1]?.evaluation
+    ) {
+      return true
+    }
     return false
   }
+
+  const awaitingNextQuestion =
+    safeIdx === answeredCount
+    && !selected
+    && answeredCount > 0
+    && answeredCount < totalTurns
+    && !!slots[answeredCount - 1]?.evaluation
+
+  const loadingNextTurn = awaitingNextQuestion && isProcessing
+  const stalledNextTurn = awaitingNextQuestion && !isProcessing
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -129,7 +149,23 @@ export function QuestionsWorkspace({
         </span>
       </div>
 
-      {!selected ? (
+      {loadingNextTurn ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-slate-400">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
+          <p className="text-sm">Generating follow-up {safeIdx + 1}…</p>
+          <p className="max-w-sm text-center text-xs text-slate-500">
+            If this takes more than a minute, check the Chat tab for errors or refresh.
+          </p>
+        </div>
+      ) : stalledNextTurn ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-slate-400">
+          <p className="text-sm">Follow-up {safeIdx + 1} did not load.</p>
+          <p className="text-xs text-slate-500">
+            Open the Chat tab for errors, confirm API keys on the server,
+            then start a new session.
+          </p>
+        </div>
+      ) : !selected ? (
         <div className="flex flex-1 items-center justify-center text-slate-500">
           <p className="text-sm">
             {slots.every(s => !s)

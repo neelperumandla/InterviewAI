@@ -74,6 +74,15 @@ export function InterviewScreen({
     }
   }, [currentQuestion?.question_index, currentQuestion?.attempt])
 
+  // After Q1 feedback, move to Q2 tab while the follow-up is generated.
+  useEffect(() => {
+    const answered = slots.filter(s => s?.evaluation).length
+    if (answered > 0 && answered < totalTurns && (isProcessing || !slots[answered])) {
+      setSelectedIdx(answered)
+      setActiveTab('questions')
+    }
+  }, [slots, totalTurns, isProcessing])
+
   const hasLiveQuestion = !!currentQuestion && !isProcessing
 
   return (

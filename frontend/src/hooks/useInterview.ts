@@ -151,6 +151,7 @@ export function useInterview() {
         setStatusMsg(`Error: ${msg.message}`)
         setIsProcessing(false)
         setCoachThinking(false)
+        setInterviewerThinking(false)
         break
     }
   }, [addFeed])

@@ -84,7 +84,7 @@ See **[DEPLOYMENT.md](DEPLOYMENT.md)** for env vars, `VITE_WS_URL`, CORS, volume
 
 \*Or set per-agent `GEMINI_API_KEY_ORCHESTRATOR`, `GEMINI_API_KEY_RESEARCH`, etc.
 
-**Coach hints** use `GEMINI_API_KEY_CHAT` (falls back to interview / `GEMINI_API_KEY`). **Follow-up dialogue** uses `GEMINI_API_KEY_INTERVIEWER` (same fallbacks).
+**Question generation** (main problem + follow-up prompts) uses `GEMINI_API_KEY_INTERVIEW` or `GEMINI_API_KEY`. **Live follow-up chat** (`turn_chat` probes) uses `GEMINI_API_KEY_INTERVIEWER`. **Coach hints** use `GEMINI_API_KEY_CHAT`.
 
 Optional tuning: `PASS_SCORE_THRESHOLD`, `SKIP_CRITIQUE_LLM`, `CALIBRATION_QUESTION_COUNT`, `MODEL_*`, `RPM_*` — see [`.env.example`](.env.example).
 

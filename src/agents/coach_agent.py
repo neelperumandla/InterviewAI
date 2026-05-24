@@ -50,7 +50,7 @@ def coach_reply(
     prior_turns: list[dict],
 ) -> str:
     mode_rule = _COACH_MODES.get(mode, _DEFAULT_MODE_RULE)
-    llm = get_llm_for_agent("coach")
+    llm = get_llm_for_agent("chat")
 
     history_blurb = ""
     if prior_turns:

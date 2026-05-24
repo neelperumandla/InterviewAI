@@ -28,7 +28,7 @@ def interviewer_probe(
     dialogue: list[dict],
     candidate_message: str,
 ) -> str:
-    llm = get_llm_for_agent("interview")
+    llm = get_llm_for_agent("interviewer")
 
     history_lines = []
     for turn in dialogue[-12:]:

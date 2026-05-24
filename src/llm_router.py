@@ -15,7 +15,8 @@ Env-var overrides (all optional):
   TEMP_<AGENT>    — float, default per agent
   RPM_<AGENT>     — requests-per-minute cap for this agent's bucket
 
-<AGENT> is one of: ORCHESTRATOR, RESEARCH, INTERVIEW, EVALUATION, CRITIC, MEMORY, COACH.
+<AGENT> is one of: ORCHESTRATOR, RESEARCH, INTERVIEW, EVALUATION, CRITIC, MEMORY,
+INTERVIEWER, CHAT (or COACH as alias for CHAT).
 """
 import os
 from functools import lru_cache
@@ -41,6 +42,8 @@ _DEFAULT_MODELS: dict[str, str] = {
     "critic":       "gemini-2.5-flash",
     # Session summary and history ops are lightweight; Flash-lite stays comfortably in free tier
     "memory":       "gemini-2.5-flash-lite",
+    "interviewer":  "gemini-2.5-flash",
+    "chat":         "gemini-2.5-flash",
     "coach":        "gemini-2.5-flash",
 }
 
@@ -51,6 +54,8 @@ _DEFAULT_TEMPERATURES: dict[str, float] = {
     "evaluation":   0.0,
     "critic":       0.0,
     "memory":       0.3,
+    "interviewer":  0.5,
+    "chat":         0.3,
     "coach":        0.3,
 }
 
@@ -68,6 +73,8 @@ _DEFAULT_RPM: dict[str, float] = {
     "evaluation":   6.0,   # on Flash by default; bump down if you switch back to Pro
     "critic":       6.0,   # on Flash by default; bump down if you switch back to Pro
     "memory":       8.0,
+    "interviewer":  8.0,
+    "chat":         8.0,
     "coach":        8.0,
 }
 

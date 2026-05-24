@@ -24,6 +24,8 @@ class Config:
     GEMINI_API_KEY_EVALUATION: str = os.getenv("GEMINI_API_KEY_EVALUATION", "")
     GEMINI_API_KEY_CRITIC: str = os.getenv("GEMINI_API_KEY_CRITIC", "")
     GEMINI_API_KEY_MEMORY: str = os.getenv("GEMINI_API_KEY_MEMORY", "")
+    GEMINI_API_KEY_INTERVIEWER: str = os.getenv("GEMINI_API_KEY_INTERVIEWER", "")
+    GEMINI_API_KEY_CHAT: str = os.getenv("GEMINI_API_KEY_CHAT", "")
 
     # Backwards-compatible fallback key (optional)
     GEMINI_API_KEY_FALLBACK: str = os.getenv("GEMINI_API_KEY", "")
@@ -91,10 +93,16 @@ class Config:
             "evaluation": cls.GEMINI_API_KEY_EVALUATION,
             "critic": cls.GEMINI_API_KEY_CRITIC,
             "memory": cls.GEMINI_API_KEY_MEMORY,
-            # Coach shares interview key unless GEMINI_API_KEY is set as fallback
-            "coach": cls.GEMINI_API_KEY_INTERVIEW,
+            "interviewer": cls.GEMINI_API_KEY_INTERVIEWER,
+            "chat": cls.GEMINI_API_KEY_CHAT,
+            # Legacy alias
+            "coach": cls.GEMINI_API_KEY_CHAT,
         }
         key = agent_map.get(agent_name, "") or cls.GEMINI_API_KEY_FALLBACK
+        if not key.strip() and agent_name == "interviewer":
+            key = cls.GEMINI_API_KEY_INTERVIEW
+        if not key.strip() and agent_name in ("chat", "coach"):
+            key = cls.GEMINI_API_KEY_INTERVIEW
         return key.strip()
 
     @classmethod

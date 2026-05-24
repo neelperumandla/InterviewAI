@@ -183,19 +183,17 @@ async def _run_graph_streaming(
             await _broadcast_state_events(ws, current_prev, latest_state)
             # Ensure the client gets the open question after graph pauses at interrupt.
             if interrupted_value and not error_message:
-                payload = _question_payload_from_state(latest_state)
+                payload = _question_payload_from_state(latest_state, interrupted_value)
                 if payload:
                     slot = payload.get("question_index", 1)
-                    phase = payload.get("phase", "primary")
-                    if not (slot > 1 and phase != "follow_up"):
-                        await _send(ws, {"type": "question", "data": payload})
-                        await _send(ws, {
-                            "type": "status",
-                            "message": (
-                                f"Turn {slot} ready — "
-                                "submit your answer when ready."
-                            ),
-                        })
+                    phase_label = (
+                        "Follow-up" if payload.get("phase") == "follow_up" else "Problem"
+                    )
+                    await _send(ws, {"type": "question", "data": payload})
+                    await _send(ws, {
+                        "type": "status",
+                        "message": f"{phase_label} {slot} ready — submit when ready.",
+                    })
             if error_message:
                 await _send(ws, {"type": "error", "message": error_message})
             break
@@ -221,18 +219,29 @@ async def _send(ws: WebSocket, msg: dict) -> bool:
         return False
 
 
-def _question_payload_from_state(state: dict) -> dict | None:
-    """Build the WS question payload from graph state."""
+def _question_payload_from_state(
+    state: dict,
+    interrupt: dict | None = None,
+) -> dict | None:
+    """Build the WS question payload from graph state (optional interrupt snapshot)."""
     question = (state.get("current_question") or "").strip()
+    if interrupt and isinstance(interrupt, dict):
+        question = (interrupt.get("question") or question).strip()
     if not question:
         return None
     topics = state.get("interview_topics", [])
     idx = state.get("current_topic_index", 0)
     topic = topics[idx] if idx < len(topics) else ""
+    if interrupt and interrupt.get("topic"):
+        topic = interrupt["topic"]
     template = state.get("interview_template") or {}
     slot = state.get("questions_answered", 0) + 1
+    if interrupt:
+        slot = interrupt.get("question_index") or interrupt.get("attempt") or slot
     total = _total_turns(template)
     phase = state.get("interview_phase", "primary")
+    if interrupt and interrupt.get("phase"):
+        phase = interrupt["phase"]
     return {
         "topic": topic,
         "question": question,
@@ -304,22 +313,18 @@ async def _broadcast_state_events(
     # previous turn's problem with the next question_index right after critique).
     prev_q = (prev_state.get("current_question") or "").strip()
     new_q = (new_state.get("current_question") or "").strip()
+    # Only broadcast when problem text changes (avoids re-sending the prior turn
+    # with an updated question_index right after critique increments the counter).
     if new_q and new_q != prev_q:
         payload = _question_payload_from_state(new_state)
         if payload:
             slot = payload.get("question_index", 1)
-            phase = payload.get("phase", "primary")
-            # Extra guard: turn 2+ must be a follow-up, not recycled primary text.
-            if slot > 1 and phase != "follow_up":
-                pass
-            else:
-                await _send(ws, {"type": "question", "data": payload})
-                slot = payload.get("question_index", 1)
-                phase_label = "Follow-up" if phase == "follow_up" else "Problem"
-                await _send(ws, {
-                    "type": "status",
-                    "message": f"{phase_label} {slot} ready.",
-                })
+            phase_label = "Follow-up" if payload.get("phase") == "follow_up" else "Problem"
+            await _send(ws, {"type": "question", "data": payload})
+            await _send(ws, {
+                "type": "status",
+                "message": f"{phase_label} {slot} ready.",
+            })
 
     # Critique result published (evaluation + critique both done)
     if (
